@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "*.tcc": "cpp",
+        "chrono": "cpp",
+        "random": "cpp",
+        "istream": "cpp",
+        "limits": "cpp",
+        "ostream": "cpp",
+        "streambuf": "cpp",
+        "tuple": "cpp",
+        "optional": "cpp",
+        "functional": "cpp",
+        "fstream": "cpp",
+        "sstream": "cpp",
+        "memory": "cpp"
+    }
+}
