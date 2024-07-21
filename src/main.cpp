@@ -3,12 +3,22 @@
 #include <lvgl.h>
 #include <hardware.h>
 #include <gfx_conf.h>
-#include <string.h>
+#include <unordered_map>
+#include <vector>
+#include <sstream>
+#include <regex>
 #include <UI_parameters.h>
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
 // VARIABLES //
+
+std::vector<std::string> networkNames;      // names of networks WiFi or Ethernet
+std::vector<std::string> wifiNetworkNames;  // names of WiFi networks
+std::vector<std::string> ethNetworkNames;   // names of ethernet networks
+
+std::string test_network_names = "W:<<Joe_Biden>>E:<<Donald_Trump>>W:<<Barack OBAMA>>W:<<Hillary Clinton>>E:<<gogo>>W:<<Zelinski>>E:<<Sheisty>>E:<<KOKO>>W:<<AMERICA>>E:<<LOLO>>W:<<League>>E:<<Off>>W:<<Legends>>";
+
 
 
 // LVGL VARIABLES //
@@ -25,6 +35,7 @@ lv_obj_t *default_screen;    // create root parent screen
 
 lv_obj_t *main_tabview;
 lv_obj_t *connection_status_label;
+lv_obj_t *connection_table;
 
 // styles
 
@@ -45,6 +56,9 @@ void init_connection_tab();
 void init_macros_tab();
 void init_settings_tab();
 void init_PLEA_settings_tab();
+void networks_string_chop_and_assign(std::string networks_string);
+void put_network_names_in_table(std::vector<std::string> networkNames);
+//void BLE_assemble_networks_string();
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -132,6 +146,8 @@ void setup()
     // Setup functions //
     lvgl_setup();
     init_tabs();
+    networks_string_chop_and_assign(test_network_names);
+    put_network_names_in_table(networkNames);
     //
 }
 
@@ -145,7 +161,7 @@ void loop()
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
-// UI FUNCTIONS //
+// UI INIT FUNCTIONS //
 
 void init_tabs(){
     main_tabview = lv_tabview_create(default_screen, LV_DIR_TOP, MAIN_TABVIEW_HEIGHT);      //create main tabview
@@ -183,13 +199,13 @@ void init_connection_tab(){
     lv_obj_add_style(connection_table_backdrop, &no_padding_style, 0);
 
     /*Fill the first column*/
-    lv_obj_t *connection_table = lv_table_create(connection_table_backdrop);
+    connection_table = lv_table_create(connection_table_backdrop);
     //lv_table_set_row_cnt(connection_table, 3);
     lv_table_set_col_cnt(connection_table, 1);
     lv_table_set_col_width(connection_table, 0, LV_PCT(100));
-    lv_table_set_cell_value(connection_table, 0, 0, "Name");
-    lv_table_set_cell_value(connection_table, 1, 0, "Apple");
-    lv_table_set_cell_value(connection_table, 2, 0, "Bananadsdvsdvsdvsd");
+    //lv_table_set_cell_value(connection_table, 0, 0, "Name");
+    //lv_table_set_cell_value(connection_table, 1, 0, "Apple");
+    //lv_table_set_cell_value(connection_table, 2, 0, "Bananadsdvsdvsdvsd");
 
     lv_obj_set_flex_flow(connection_table, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_grow(connection_table, 1);
@@ -281,4 +297,54 @@ void init_PLEA_settings_tab(){
     *   This tab deals with PLEA settings
     */
     lv_obj_t *PLEA_settings_tab = lv_tabview_add_tab(main_tabview, "PLEA settings");
+}
+
+// UI FUNCTIONS //
+
+void put_network_names_in_table(std::vector<std::string> networkNames){
+    byte number_of_networks = networkNames.size();
+    lv_table_set_col_cnt(connection_table, number_of_networks );    // number of columns = number of networks
+    for(byte i=0; i<number_of_networks; i++){
+        lv_table_set_cell_value(connection_table, i, 0, networkNames.at(i).c_str());
+        //Serial.println(networkNames.at(i).c_str());       // troubleshooting line
+    } 
+}
+
+// NETWORKS STRING FUNCTIONS //
+
+void networks_string_chop_and_assign(std::string networks_string){
+    /*
+    *   Chops the networks_string into individual networks
+    *   and assigns them to either the wifiNetworkNames or
+    *   ethNetworkNames
+    * 
+    *   Function searches string chunks that start with W:
+    *   or E: and the name of the network that is between << and >>
+    * 
+    *   Legenda poruke:
+    *   W:  WiFi network
+    *   E:  Ethernet network
+    *   <<  Start of a network's name
+    *   >>  End of a network's name
+    * 
+    *   Example (WiFi network with a name net123):
+    *   W:<<net123>>
+    */
+
+    std::regex re(R"((W:|E:)<<([^>]+)>>)");         // re - the regular expresion that we will be searching for
+    std::smatch match;                              // object that will hold matches for the requirment in the last line
+    std::string::const_iterator searchStart(networks_string.cbegin());  // initialize iterator at the string's beginning
+    while (std::regex_search(searchStart, networks_string.cend(), match, re)) {
+        std::string type = match[1];
+        std::string name = match[2];
+        networkNames.push_back(type + name);
+        searchStart = match.suffix().first;
+    }
+
+    /*
+    Serial.println("Network names:");                   //
+    for(int i = 0; i < networkNames.size(); i++){       //  troubleshooting block:
+        Serial.println(networkNames.at(i).c_str());     //  writes the names of networks
+    }                                                   //
+    */
 }
