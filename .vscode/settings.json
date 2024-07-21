@@ -12,6 +12,7 @@
         "functional": "cpp",
         "fstream": "cpp",
         "sstream": "cpp",
-        "memory": "cpp"
+        "memory": "cpp",
+        "string": "cpp"
     }
 }
