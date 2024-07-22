@@ -23,9 +23,17 @@
 std::vector<std::string> networkNames;      // names of networks WiFi or Ethernet
 std::vector<std::string> wifiNetworkNames;  // names of WiFi networks
 std::vector<std::string> ethNetworkNames;   // names of ethernet networks
+std::string network_names_string;
 
-std::string test_network_names = "W:<<Joe_Biden>>E:<<Donald_Trump>>W:<<Barack OBAMA>>W:<<Hillary Clinton>>E:<<gogo>>W:<<Zelinski>>E:<<Sheisty>>E:<<KOKO>>W:<<AMERICA>>E:<<LOLO>>W:<<League>>E:<<Off>>W:<<Legends>>";
+// Struct that holds network information
+struct Network {
+    std::string name;       //
+    std::string type;       // "WiFi" or "Ethernet"
+    std::string password;   // 
+};
+std::vector<Network> networks;
 
+std::string test_network_names = "W:<<Joe_Biden>>E:<<Donald_Trump>>W:<<Barack OBAMA>>W:<<Hillary Clinton>>E:<<gogo>>W:<<Zelinski>>E:<<Sheisty>>E:<<KOKO>>W:<<AMERICA>>E:<<LOLO>>W:<<League>>E:<<Off>>W:<<Legends>>#";
 
 
 // LVGL VARIABLES //
@@ -59,6 +67,7 @@ BLECharacteristic* BLE_network_names_ch = NULL;
 BLEAdvertising* BLE_advertising = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
+bool network_string_completed = false;       // must be 0 at the start
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +93,9 @@ void put_network_names_in_table(std::vector<std::string> networkNames);
 // BLE functions
 void BLE_init();
 void BLE_init_network_service();
-void BLE_string_from_chunks(std::string chunk);
+void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool* completed_message_indicator);
+void BLE_network_names_from_string(std::string networks_string, std::vector<Network>& networks);
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -108,15 +119,23 @@ class ServerCallbacks: public BLEServerCallbacks {
 class recieveNetworkNamesCallback: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *receiver_characteristic) {
         std::string BLE_received_string = receiver_characteristic->getValue();
-        if (BLE_received_string.length() > 0) {                   //
+        /*
+        if (BLE_received_string.length() > 0) {                     //
             Serial.println("*********");                            //
             Serial.print("Recieved string: ");                      //
-        for (int i = 0; i < BLE_received_string.length(); i++)  //  troubleshooting block
-            Serial.print(BLE_received_string[i]);                 //
-        Serial.println();                                       //
-        Serial.println("*********");                            //
+        for (int i = 0; i < BLE_received_string.length(); i++)      //  troubleshooting block
+            Serial.print(BLE_received_string[i]);                   //
+        Serial.println();                                           //
+        Serial.println("*********");                                //
         }
-        BLE_string_from_chunks(BLE_received_string);
+        */
+        BLE_string_from_chunks(BLE_received_string, &network_names_string, &network_string_completed);
+        if(network_string_completed){
+            //BLE_network_names_from_string(network_names_string, networks);
+            //networks_string_chop_and_assign(network_names_string);
+            network_names_string = "";
+            network_string_completed = false;
+        }
     }
 };
 
@@ -403,12 +422,12 @@ void networks_string_chop_and_assign(std::string networks_string){
         searchStart = match.suffix().first;
     }
 
-    /*
+    
     Serial.println("Network names:");                   //
     for(int i = 0; i < networkNames.size(); i++){       //  troubleshooting block:
         Serial.println(networkNames.at(i).c_str());     //  writes the names of networks
     }                                                   //
-    */
+    
 }
 
 // BLE FUNCTIONS //
@@ -431,7 +450,7 @@ void BLE_init(){
     BLE_advertising->setScanResponse(false);
     BLE_advertising->setMinPreferred(0x0);  // Set value to 0x00 to not advertise this parameter
     BLEDevice::startAdvertising();
-    Serial.println("Waiting for a client connection to notify...");
+    Serial.println("Waiting for a client connection...");
     //
 }
 
@@ -456,6 +475,67 @@ void BLE_init_network_service(){
     BLE_network_service -> start();    // Start the service
 }
 
-void BLE_string_from_chunks(std::string chunk){
-    
+void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool* completed_message_indicator){
+    /*
+    *   Takes the incoming chunks of the string coming in
+    *   and appends them to a string. Detects the end of a
+    *   string with the '#' and changes an indicator booll 
+    *   to true.
+    */
+    *storage_string += chunk;       // Append the chunk that was sent over BLE to
+                                    // a string that will containt the whole message
+    if(chunk.back() == '#' || chunk == ""){ // If the chunk ends with '#' or it is empty
+        *completed_message_indicator = true;
+        /*
+        Serial.println("*********");                    //
+        Serial.println(storage_string->c_str());        // troubleshooting block
+        Serial.println();                               //
+        Serial.println("Message indicator:");           //
+        Serial.println(*completed_message_indicator);   //
+        Serial.println("*********");                    //
+        */
+    }
+}
+
+
+void BLE_network_names_from_string(std::string networks_string, std::vector<Network>& networks) {
+    /*
+    *   Chops the networks_string into individual networks
+    *   and assigns them to either the wifiNetworkNames or
+    *   ethNetworkNames
+    * 
+    *   Function searches string chunks that start with W:
+    *   or E: and the name of the network that is between << and >>
+    * 
+    *   Legenda poruke:
+    *   W:  WiFi network
+    *   E:  Ethernet network
+    *   <<  Start of a network's name
+    *   >>  End of a network's name
+    * 
+    *   Example (WiFi network with a name net123):
+    *   W:<<net123>>
+    */
+
+    // Regular expression to extract network names and types
+    std::regex re(R"((W:|E:)<<([^>]+)>>)");
+    std::smatch match;
+    std::string::const_iterator searchStart(networks_string.cbegin());
+
+    // Extract network names and their types
+    while (std::regex_search(searchStart, networks_string.cend(), match, re)) {
+        std::string type = match[1] == "W:" ? "WiFi" : "Ethernet";
+        std::string name = match[2];
+        networks.push_back({name, type, ""});  // Initially, the password is empty
+        searchStart = match.suffix().first;
+    }
+
+    for (const auto& network : networks) {
+        Serial.print("Network Name: ");
+        Serial.print(network.name.c_str());
+        Serial.print(", Type: ");
+        Serial.print(network.type.c_str());
+        Serial.print(", Password: ");
+        Serial.println(network.password.c_str());
+    }
 }
