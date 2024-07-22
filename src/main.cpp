@@ -1,13 +1,20 @@
 // HEADERS //
 
 #include <lvgl.h>
-#include <hardware.h>
 #include <gfx_conf.h>
 #include <unordered_map>
 #include <vector>
 #include <sstream>
 #include <regex>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+// custom
+#include <hardware.h>
 #include <UI_parameters.h>
+#include <BLE_conf.h>
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -33,11 +40,25 @@ lv_obj_t *default_screen;    // create root parent screen
 
 // widgets
 
-lv_obj_t *main_tabview;
-lv_obj_t *connection_status_label;
-lv_obj_t *connection_table;
+lv_obj_t* main_tabview;
+lv_obj_t* connection_status_label;
+lv_obj_t* connection_table;
 
 // styles
+
+
+////////////////////////////////////////////////////////////////////////////////////////////
+
+// BLE //
+
+// variables
+
+BLEServer* BLE_HMI_server = NULL;
+BLEService* BLE_network_service = NULL;
+BLECharacteristic* BLE_network_names_ch = NULL;
+BLEAdvertising* BLE_advertising = NULL;
+bool deviceConnected = false;
+bool oldDeviceConnected = false;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -45,20 +66,59 @@ lv_obj_t *connection_table;
 // FUNCTION DECLARATIONS //
 
 // gfx functions
-
 void touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data);
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
 
 // UI init functions
-
 void init_tabs();
 void init_connection_tab();
 void init_macros_tab();
 void init_settings_tab();
 void init_PLEA_settings_tab();
+
+// network name operations
 void networks_string_chop_and_assign(std::string networks_string);
 void put_network_names_in_table(std::vector<std::string> networkNames);
 //void BLE_assemble_networks_string();
+
+// BLE functions
+void BLE_init();
+void BLE_init_network_service();
+void BLE_string_from_chunks(std::string chunk);
+
+////////////////////////////////////////////////////////////////////////////////////////////
+
+// connect/disconnect callback class
+class ServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* BLE_HMI_server) {
+        // what to do on connection
+        deviceConnected = true;
+        Serial.println("Device connected");
+    };
+
+    void onDisconnect(BLEServer* BLE_HMI_server) {
+        // what to do on disconnection
+        deviceConnected = false;
+        Serial.println("Device disconnected");
+        BLEDevice::startAdvertising();  // wait for another connection
+    }
+};
+
+// class that deals with receiving from client
+class recieveNetworkNamesCallback: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *receiver_characteristic) {
+        std::string BLE_received_string = receiver_characteristic->getValue();
+        if (BLE_received_string.length() > 0) {                   //
+            Serial.println("*********");                            //
+            Serial.print("Recieved string: ");                      //
+        for (int i = 0; i < BLE_received_string.length(); i++)  //  troubleshooting block
+            Serial.print(BLE_received_string[i]);                 //
+        Serial.println();                                       //
+        Serial.println("*********");                            //
+        }
+        BLE_string_from_chunks(BLE_received_string);
+    }
+};
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -146,8 +206,10 @@ void setup()
     // Setup functions //
     lvgl_setup();
     init_tabs();
-    networks_string_chop_and_assign(test_network_names);
-    put_network_names_in_table(networkNames);
+    //networks_string_chop_and_assign(test_network_names);
+    //put_network_names_in_table(networkNames);
+    BLE_init();
+
     //
 }
 
@@ -347,4 +409,53 @@ void networks_string_chop_and_assign(std::string networks_string){
         Serial.println(networkNames.at(i).c_str());     //  writes the names of networks
     }                                                   //
     */
+}
+
+// BLE FUNCTIONS //
+
+void BLE_init(){
+
+    // Create the BLE Device
+    BLEDevice::init("PLEA HMI");
+
+    // Create the BLE Server
+    BLE_HMI_server = BLEDevice::createServer();
+    BLE_HMI_server->setCallbacks(new ServerCallbacks());            // Set callback on connect and disconnect
+
+    BLE_advertising = BLEDevice::getAdvertising();  // Create advertising
+
+    // Initialize services
+    BLE_init_network_service();
+
+    // Start advertising
+    BLE_advertising->setScanResponse(false);
+    BLE_advertising->setMinPreferred(0x0);  // Set value to 0x00 to not advertise this parameter
+    BLEDevice::startAdvertising();
+    Serial.println("Waiting for a client connection to notify...");
+    //
+}
+
+
+void BLE_init_network_service(){
+    /*
+    *   This function creates the BLE_network_service
+    *   and it starts it.
+    */
+    BLE_network_service = BLE_HMI_server->createService(NETWORK_SERVICE_UUID);    // Create BLE network service
+
+    // Create BLE_network_names_ch characteristic
+    // It is intended for receiveing network names from Raspberry PI
+    BLE_network_names_ch = BLE_network_service->createCharacteristic(
+                      NETWORK_NAMES_CH_UUID,
+                      BLECharacteristic::PROPERTY_WRITE
+                    );
+    BLE_network_names_ch->setCallbacks(new recieveNetworkNamesCallback());  // Add callback on recieve from client
+
+    BLE_advertising->addServiceUUID(NETWORK_SERVICE_UUID);      // Add BLE_network_service to advertising
+
+    BLE_network_service -> start();    // Start the service
+}
+
+void BLE_string_from_chunks(std::string chunk){
+    
 }
