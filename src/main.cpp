@@ -18,18 +18,25 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
+// TASK HANDLES //
+TaskHandle_t LVGL_handler_task;
+
 // VARIABLES //
 
+// Network
 std::vector<std::string> networkNames;      // names of networks WiFi or Ethernet
-std::vector<std::string> wifiNetworkNames;  // names of WiFi networks
-std::vector<std::string> ethNetworkNames;   // names of ethernet networks
 std::string network_names_string;
+
+//Network flags
+bool networks_string_received = false;
+bool network_string_completed = false;       // must be 0 at the start
 
 // Struct that holds network information
 struct Network {
     std::string name;       //
     std::string type;       // "WiFi" or "Ethernet"
-    std::string password;   // 
+    std::string password;   //
+    byte table_entry_nmb;   // 
 };
 std::vector<Network> networks;
 
@@ -65,9 +72,8 @@ BLEServer* BLE_HMI_server = NULL;
 BLEService* BLE_network_service = NULL;
 BLECharacteristic* BLE_network_names_ch = NULL;
 BLEAdvertising* BLE_advertising = NULL;
-bool deviceConnected = false;
-bool oldDeviceConnected = false;
-bool network_string_completed = false;       // must be 0 at the start
+bool BLEdeviceConnected = false;
+bool BLEolddeviceConnected = false;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -85,14 +91,16 @@ void init_macros_tab();
 void init_settings_tab();
 void init_PLEA_settings_tab();
 
+// LVGL task
+void LVGL_handler_function(void * pvParameters);
+
 // network name operations
-void networks_string_chop_and_assign(std::string networks_string);
-void put_network_names_in_table(std::vector<std::string> networkNames);
+void put_network_names_in_table(const std::vector<Network>& networkss);
 //void BLE_assemble_networks_string();
 
 // BLE functions
-void BLE_init();
-void BLE_init_network_service();
+void init_BLE();
+void init_BLE_network_service();
 void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool* completed_message_indicator);
 void BLE_network_names_from_string(std::string networks_string, std::vector<Network>& networks);
 
@@ -103,13 +111,13 @@ void BLE_network_names_from_string(std::string networks_string, std::vector<Netw
 class ServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* BLE_HMI_server) {
         // what to do on connection
-        deviceConnected = true;
+        BLEdeviceConnected = true;
         Serial.println("Device connected");
     };
 
     void onDisconnect(BLEServer* BLE_HMI_server) {
         // what to do on disconnection
-        deviceConnected = false;
+        BLEdeviceConnected = false;
         Serial.println("Device disconnected");
         BLEDevice::startAdvertising();  // wait for another connection
     }
@@ -133,7 +141,7 @@ class recieveNetworkNamesCallback: public BLECharacteristicCallbacks {
         if(network_string_completed){
             //BLE_network_names_from_string(network_names_string, networks);
             //networks_string_chop_and_assign(network_names_string);
-            network_names_string = "";
+            networks_string_received = true;
             network_string_completed = false;
         }
     }
@@ -222,22 +230,49 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
 void setup()
 {
+    // Create a task to handle the LVGL updates
+    xTaskCreatePinnedToCore(
+                    LVGL_handler_function,      /* Task function. */
+                    "LVGL_handler_task",        /* name of task. */
+                    10000,                      /* Stack size of task */
+                    NULL,                       /* parameter of the task */
+                    1,                          /* priority of the task */
+                    &LVGL_handler_task,         /* Task handle to keep track of created task */
+                    0);                         /* pin task to core 0 */                  
+    delay(500); 
     // Setup functions //
     lvgl_setup();
     init_tabs();
-    //networks_string_chop_and_assign(test_network_names);
-    //put_network_names_in_table(networkNames);
-    BLE_init();
-
+    init_BLE();
     //
 }
 
 void loop()
 {
-    // Timer handler //
-    lv_timer_handler();     // don't touch this
-    delay(5);               //
-    //
+    if(BLEdeviceConnected == true){     // If we are connected
+        // Check if we received a network_names_string
+        if(networks_string_received == true){
+            networks.clear();
+            BLE_network_names_from_string(network_names_string, networks);
+            put_network_names_in_table(networks);
+            network_names_string = "";
+            network_string_completed = false;
+            networks_string_received = false;
+        }
+    }
+}
+
+void LVGL_handler_function(void * pvParameters){
+    /*
+    *   This task handles the LVGL timer as to
+    *   free up the main loop
+    */
+    for(;;) {
+        // Timer handler //
+        lv_timer_handler();     // don't touch this
+        delay(5);               //
+        //
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -279,18 +314,24 @@ void init_connection_tab(){
     lv_obj_add_style(connection_tab, &no_padding_style, 0);
     lv_obj_add_style(connection_table_backdrop, &no_padding_style, 0);
 
-    /*Fill the first column*/
     connection_table = lv_table_create(connection_table_backdrop);
-    //lv_table_set_row_cnt(connection_table, 3);
-    lv_table_set_col_cnt(connection_table, 1);
-    lv_table_set_col_width(connection_table, 0, LV_PCT(100));
-    //lv_table_set_cell_value(connection_table, 0, 0, "Name");
-    //lv_table_set_cell_value(connection_table, 1, 0, "Apple");
-    //lv_table_set_cell_value(connection_table, 2, 0, "Bananadsdvsdvsdvsd");
-
-    lv_obj_set_flex_flow(connection_table, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_grow(connection_table, 1);
     lv_obj_set_size(connection_table, LV_PCT(100), LV_PCT(100));
+    lv_table_set_col_cnt(connection_table, 3);
+    
+    lv_table_set_col_width(connection_table, 0, 80);
+    lv_table_set_col_width(connection_table, 2, 80);
+    lv_coord_t table_width = lv_obj_get_width(connection_table);
+    lv_table_set_col_width(connection_table, 1, 220);
+
+    /*
+    lv_coord_t table_width = lv_obj_get_width(connection_table);
+    lv_table_set_col_width(connection_table, 0, table_width * 0.15); // 30% width
+    lv_table_set_col_width(connection_table, 1, table_width * 0.7); // 40% width
+    lv_table_set_col_width(connection_table, 2, table_width * 0.15); // 30% width
+    */
+
+    lv_obj_set_flex_flow(connection_table, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_grow(connection_table, 1);
 
     lv_obj_set_flex_flow(connection_buttons_backdrop, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(connection_buttons_backdrop, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);  // how to align backdrop
@@ -382,27 +423,30 @@ void init_PLEA_settings_tab(){
 
 // UI FUNCTIONS //
 
-void put_network_names_in_table(std::vector<std::string> networkNames){
-    byte number_of_networks = networkNames.size();
-    lv_table_set_col_cnt(connection_table, number_of_networks );    // number of columns = number of networks
-    for(byte i=0; i<number_of_networks; i++){
-        lv_table_set_cell_value(connection_table, i, 0, networkNames.at(i).c_str());
-        //Serial.println(networkNames.at(i).c_str());       // troubleshooting line
-    } 
+void put_network_names_in_table(const std::vector<Network>& networks){
+    byte number_of_networks = networks.size();
+    lv_table_set_row_cnt(connection_table, number_of_networks);  // number of rows = number of networks
+    for (byte i = 0; i < number_of_networks; i++) {
+        lv_table_set_cell_value(connection_table, i, 0, networks[i].type.c_str());
+        lv_table_set_cell_value(connection_table, i, 1, networks[i].name.c_str());
+        lv_table_set_cell_value(connection_table, i, 2, std::to_string(networks[i].table_entry_nmb).c_str());
+        Serial.print(networks[i].name.c_str());  // troubleshooting line
+        Serial.print(" entry: ");
+        Serial.println(networks[i].table_entry_nmb);
+    }
 }
 
 // NETWORKS STRING FUNCTIONS //
 
-void networks_string_chop_and_assign(std::string networks_string){
+void BLE_network_names_from_string(std::string networks_string, std::vector<Network>& networks){
     /*
     *   Chops the networks_string into individual networks
-    *   and assigns them to either the wifiNetworkNames or
-    *   ethNetworkNames
     * 
     *   Function searches string chunks that start with W:
     *   or E: and the name of the network that is between << and >>
+    *   '#' marks the end of the string
     * 
-    *   Legenda poruke:
+    *   Legend:
     *   W:  WiFi network
     *   E:  Ethernet network
     *   <<  Start of a network's name
@@ -412,27 +456,36 @@ void networks_string_chop_and_assign(std::string networks_string){
     *   W:<<net123>>
     */
 
-    std::regex re(R"((W:|E:)<<([^>]+)>>)");         // re - the regular expresion that we will be searching for
-    std::smatch match;                              // object that will hold matches for the requirment in the last line
-    std::string::const_iterator searchStart(networks_string.cbegin());  // initialize iterator at the string's beginning
+    // Regular expression to extract network names and types
+    std::regex re(R"((W:|E:)<<([^>]+)>>)");
+    std::smatch match;
+    std::string::const_iterator searchStart(networks_string.cbegin());
+
+    // Extract network names and their types
+    byte i=0;
     while (std::regex_search(searchStart, networks_string.cend(), match, re)) {
-        std::string type = match[1];
+        std::string type = match[1] == "W:" ? "WiFi" : "Eth";
         std::string name = match[2];
-        networkNames.push_back(type + name);
+        networks.push_back({name, type, "", i});  // Initially, the password is empty
         searchStart = match.suffix().first;
+        i++;
     }
 
-    
-    Serial.println("Network names:");                   //
-    for(int i = 0; i < networkNames.size(); i++){       //  troubleshooting block:
-        Serial.println(networkNames.at(i).c_str());     //  writes the names of networks
-    }                                                   //
-    
+    /*
+    for (const auto& network : networks) {          //
+        Serial.print("Network Name: ");             //
+        Serial.print(network.name.c_str());         //
+        Serial.print(", Type: ");                   //  Troubleshooting block
+        Serial.print(network.type.c_str());         //
+        Serial.print(", Password: ");               //
+        Serial.println(network.password.c_str());   //
+    }
+    */
 }
 
 // BLE FUNCTIONS //
 
-void BLE_init(){
+void init_BLE(){
 
     // Create the BLE Device
     BLEDevice::init("PLEA HMI");
@@ -444,7 +497,7 @@ void BLE_init(){
     BLE_advertising = BLEDevice::getAdvertising();  // Create advertising
 
     // Initialize services
-    BLE_init_network_service();
+    init_BLE_network_service();
 
     // Start advertising
     BLE_advertising->setScanResponse(false);
@@ -454,8 +507,7 @@ void BLE_init(){
     //
 }
 
-
-void BLE_init_network_service(){
+void init_BLE_network_service(){
     /*
     *   This function creates the BLE_network_service
     *   and it starts it.
@@ -497,45 +549,3 @@ void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool
     }
 }
 
-
-void BLE_network_names_from_string(std::string networks_string, std::vector<Network>& networks) {
-    /*
-    *   Chops the networks_string into individual networks
-    *   and assigns them to either the wifiNetworkNames or
-    *   ethNetworkNames
-    * 
-    *   Function searches string chunks that start with W:
-    *   or E: and the name of the network that is between << and >>
-    * 
-    *   Legenda poruke:
-    *   W:  WiFi network
-    *   E:  Ethernet network
-    *   <<  Start of a network's name
-    *   >>  End of a network's name
-    * 
-    *   Example (WiFi network with a name net123):
-    *   W:<<net123>>
-    */
-
-    // Regular expression to extract network names and types
-    std::regex re(R"((W:|E:)<<([^>]+)>>)");
-    std::smatch match;
-    std::string::const_iterator searchStart(networks_string.cbegin());
-
-    // Extract network names and their types
-    while (std::regex_search(searchStart, networks_string.cend(), match, re)) {
-        std::string type = match[1] == "W:" ? "WiFi" : "Ethernet";
-        std::string name = match[2];
-        networks.push_back({name, type, ""});  // Initially, the password is empty
-        searchStart = match.suffix().first;
-    }
-
-    for (const auto& network : networks) {
-        Serial.print("Network Name: ");
-        Serial.print(network.name.c_str());
-        Serial.print(", Type: ");
-        Serial.print(network.type.c_str());
-        Serial.print(", Password: ");
-        Serial.println(network.password.c_str());
-    }
-}
