@@ -1,5 +1,6 @@
 // HEADERS //
 
+// libraries
 #include <lvgl.h>
 #include <gfx_conf.h>
 #include <unordered_map>
@@ -19,7 +20,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////
 
 // TASK HANDLES //
-TaskHandle_t LVGL_handler_task;
+TaskHandle_t LVGL_handler_task;             // goes on core0
 
 // VARIABLES //
 
@@ -56,7 +57,8 @@ lv_obj_t *default_screen;    // create root parent screen
 // widgets
 
 lv_obj_t* main_tabview;
-lv_obj_t* connection_status_label;
+lv_obj_t* BLE_connection_status_label;
+lv_obj_t* NET_connection_status_label;
 lv_obj_t* connection_table;
 
 // styles
@@ -71,9 +73,20 @@ lv_obj_t* connection_table;
 BLEServer* BLE_HMI_server = NULL;
 BLEService* BLE_network_service = NULL;
 BLECharacteristic* BLE_network_names_ch = NULL;
+BLECharacteristic* BLE_PLEA_commands_ch = NULL;
 BLEAdvertising* BLE_advertising = NULL;
 bool BLEdeviceConnected = false;
 bool BLEolddeviceConnected = false;
+
+
+const char PLEA_commands[] = {
+    /*
+    *   This are simple commands that will
+    *   be sent to PLEA via buttons.
+    */
+    SEARCH_NETWORKS_COMMAND,    // [0] -serch for networks
+    REQUEST_IP_COMMAND,         // [1] -send IP
+};
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -103,6 +116,7 @@ void init_BLE();
 void init_BLE_network_service();
 void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool* completed_message_indicator);
 void BLE_network_names_from_string(std::string networks_string, std::vector<Network>& networks);
+void send_simple_command_cb(lv_event_t *e);
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -112,18 +126,20 @@ class ServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* BLE_HMI_server) {
         // what to do on connection
         BLEdeviceConnected = true;
+        lv_label_set_text(BLE_connection_status_label, "Bluetooth connected");
         Serial.println("Device connected");
     };
 
     void onDisconnect(BLEServer* BLE_HMI_server) {
         // what to do on disconnection
         BLEdeviceConnected = false;
+        lv_label_set_text(BLE_connection_status_label, "Bluetooth disconnected");
         Serial.println("Device disconnected");
         BLEDevice::startAdvertising();  // wait for another connection
     }
 };
 
-// class that deals with receiving from client
+// class that deals with receiving string chunks from client
 class recieveNetworkNamesCallback: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *receiver_characteristic) {
         std::string BLE_received_string = receiver_characteristic->getValue();
@@ -150,7 +166,7 @@ class recieveNetworkNamesCallback: public BLECharacteristicCallbacks {
 ////////////////////////////////////////////////////////////////////////////////////////////
 
 // LVGL SETUP FUNCTIONS AND DRIVERS //
-void lvgl_setup()
+void init_LVGL()
 {
     Serial.begin(115200);
 
@@ -158,18 +174,16 @@ void lvgl_setup()
     pinMode(BL_PIN, OUTPUT);        // backlight initialization
     digitalWrite(BL_PIN, 1);        // 
     gfx.begin();                    // start the LovyanGFX
-    gfx.fillScreen(TFT_BLACK);      
-    delay(200);
+    gfx.fillScreen(TFT_BLACK);      //
     //
     lv_init();                      // LVGL initialize
-    delay(100);
 
     // display setup
     lv_disp_draw_buf_init(&draw_buf, disp_draw_buf1, NULL, screenWidth * screenHeight / 8);
-    lv_disp_drv_init(&disp_drv);    // display driver
+    lv_disp_drv_init(&disp_drv);        // display driver
     disp_drv.hor_res = screenWidth;
     disp_drv.ver_res = screenHeight;
-    disp_drv.flush_cb = my_disp_flush;  // flush function
+    disp_drv.flush_cb = my_disp_flush;  // flush function for LVGL
     disp_drv.full_refresh = 1;
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
@@ -182,7 +196,6 @@ void lvgl_setup()
     lv_indev_drv_register(&indev_drv);
 
     // default screen
-
     default_screen = lv_scr_act();
 
     // SANITY TEST //
@@ -239,9 +252,8 @@ void setup()
                     1,                          /* priority of the task */
                     &LVGL_handler_task,         /* Task handle to keep track of created task */
                     0);                         /* pin task to core 0 */                  
-    delay(500); 
     // Setup functions //
-    lvgl_setup();
+    init_LVGL();
     init_tabs();
     init_BLE();
     //
@@ -323,20 +335,11 @@ void init_connection_tab(){
     lv_coord_t table_width = lv_obj_get_width(connection_table);
     lv_table_set_col_width(connection_table, 1, 220);
 
-    /*
-    lv_coord_t table_width = lv_obj_get_width(connection_table);
-    lv_table_set_col_width(connection_table, 0, table_width * 0.15); // 30% width
-    lv_table_set_col_width(connection_table, 1, table_width * 0.7); // 40% width
-    lv_table_set_col_width(connection_table, 2, table_width * 0.15); // 30% width
-    */
-
     lv_obj_set_flex_flow(connection_table, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_grow(connection_table, 1);
 
     lv_obj_set_flex_flow(connection_buttons_backdrop, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(connection_buttons_backdrop, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);  // how to align backdrop
-    //lv_style_t *connection_buttons_backdrop_style;
-    //lv_style_set_pad_gap
 
 
     // Create a style for buttons
@@ -352,49 +355,53 @@ void init_connection_tab(){
     lv_obj_t *con_indicator_backdrop = lv_obj_create(connection_buttons_backdrop);
     lv_obj_add_style(con_indicator_backdrop, &connect_btn_style, LV_PART_MAIN);
     lv_obj_set_flex_grow(con_indicator_backdrop, 2);
-    connection_status_label = lv_label_create(con_indicator_backdrop);
-    lv_label_set_text(connection_status_label, "Disconnected");
-    lv_obj_center(connection_status_label);
 
+    
+    BLE_connection_status_label = lv_label_create(con_indicator_backdrop);
+    lv_label_set_text(BLE_connection_status_label, "Bluetooth disconnected");
+    lv_obj_set_align(BLE_connection_status_label, LV_ALIGN_TOP_MID);
+
+    NET_connection_status_label = lv_label_create(con_indicator_backdrop);
+    lv_label_set_text(NET_connection_status_label, "Network disconnected");
+    lv_obj_set_align(NET_connection_status_label, LV_ALIGN_BOTTOM_MID);
+
+    /*
     // Add connect/disconnect button - it can connect or disconnect
     lv_obj_t *connect_btn = lv_btn_create(connection_buttons_backdrop);
     lv_obj_t *connect_btn_label = lv_label_create(connect_btn);
     lv_label_set_text(connect_btn_label, "Connect");
     lv_obj_add_style(connect_btn, &connect_btn_style, 0);
     lv_obj_add_style(connect_btn_label, &connect_btn_style, 0);
+    lv_obj_center(connect_btn_label);
+    */
 
     // Add search connections button
-    lv_obj_t *srch_connections_btn = lv_btn_create(connection_buttons_backdrop);
-    lv_obj_t *srch_connections_btn_label = lv_label_create(srch_connections_btn);
-    lv_label_set_text(srch_connections_btn_label, "Search connections");
-    lv_obj_add_style(srch_connections_btn, &connect_btn_style, 0);
-    lv_obj_add_style(srch_connections_btn_label, &connect_btn_style, 0);
+    lv_obj_t* srch_networks_btn = lv_btn_create(connection_buttons_backdrop);
+    lv_obj_t* srch_networks_btn_label = lv_label_create(srch_networks_btn);
+    lv_label_set_text(srch_networks_btn_label, "Search connections");
+    lv_obj_add_style(srch_networks_btn, &connect_btn_style, 0);
+    lv_obj_add_style(srch_networks_btn_label, &connect_btn_style, 0);
+    lv_obj_add_event_cb(srch_networks_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void*)&PLEA_commands[0]); // Send 's'
+    lv_obj_center(srch_networks_btn_label);
 
-    // Add password button
-    lv_obj_t *passwor_btn = lv_btn_create(connection_buttons_backdrop);
-    lv_obj_t *passwor_btn_label = lv_label_create(passwor_btn);
-    lv_label_set_text(passwor_btn_label, "Password");
-    lv_obj_add_style(passwor_btn, &connect_btn_style, 0);
-    lv_obj_add_style(passwor_btn_label, &connect_btn_style, 0);
-
+    /*
     // Add empty memory button
     lv_obj_t *empty_btn = lv_btn_create(connection_buttons_backdrop);
     lv_obj_t *empty_btn_label = lv_label_create(empty_btn);
     lv_label_set_text(empty_btn_label, "Empty");
     lv_obj_add_style(empty_btn, &connect_btn_style, 0);
     lv_obj_add_style(empty_btn_label, &connect_btn_style, 0);
+    lv_obj_center(empty_btn_label);
+    */
 
     // Add IP button
     lv_obj_t *IP_btn = lv_btn_create(connection_buttons_backdrop);
     lv_obj_t *IP_btn_label = lv_label_create(IP_btn);
-    lv_label_set_text(IP_btn_label, "IP");
+    lv_label_set_text(IP_btn_label, "Get IP");
     lv_obj_add_style(IP_btn, &connect_btn_style, 0);
     lv_obj_add_style(IP_btn_label, &connect_btn_style, 0);
-
-    /*
-    lv_obj_set_flex_grow(btn1, 1);
-    lv_obj_set_flex_grow(btn2, 1);
-    */
+    lv_obj_add_event_cb(IP_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void*)&PLEA_commands[1]); // Send 'p'
+    lv_obj_center(IP_btn_label);
 }
 
 void init_macros_tab(){
@@ -483,6 +490,8 @@ void BLE_network_names_from_string(std::string networks_string, std::vector<Netw
     */
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////
+
 // BLE FUNCTIONS //
 
 void init_BLE(){
@@ -522,6 +531,17 @@ void init_BLE_network_service(){
                     );
     BLE_network_names_ch->setCallbacks(new recieveNetworkNamesCallback());  // Add callback on recieve from client
 
+
+     // Create BLE_PLEA_commands_ch characteristic
+     // It sends simple commands via buttons
+    BLE_PLEA_commands_ch = BLE_network_service->createCharacteristic(
+                      PLEA_COMMANDS_CH_UUID,
+                      BLECharacteristic::PROPERTY_READ   |
+                      BLECharacteristic::PROPERTY_NOTIFY
+                    );
+    
+    BLE_PLEA_commands_ch->addDescriptor(new BLE2902());         // Add a BLE descriptor for notifications
+
     BLE_advertising->addServiceUUID(NETWORK_SERVICE_UUID);      // Add BLE_network_service to advertising
 
     BLE_network_service -> start();    // Start the service
@@ -549,3 +569,14 @@ void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool
     }
 }
 
+
+////////////////////////////////////////////////////////////////////////////////////////////
+
+// CALLBACK FUNCTIONS //
+
+void send_simple_command_cb(lv_event_t *e){
+    char command = *(char*)lv_event_get_user_data(e);   // Get the command from user_data
+    std::string command_str(1, command);                //
+    BLE_PLEA_commands_ch->setValue(command_str);        //
+    BLE_PLEA_commands_ch->notify();                     //
+}
