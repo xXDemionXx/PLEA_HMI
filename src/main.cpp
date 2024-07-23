@@ -38,7 +38,7 @@ struct Network {
     std::string password;   //
     byte table_entry_nmb;   // 
 };
-std::vector<Network> networks;
+std::vector<Network> networks;              // vector that holds network names
 
 std::string test_network_names = "W:<<Joe_Biden>>E:<<Donald_Trump>>W:<<Barack OBAMA>>W:<<Hillary Clinton>>E:<<gogo>>W:<<Zelinski>>E:<<Sheisty>>E:<<KOKO>>W:<<AMERICA>>E:<<LOLO>>W:<<League>>E:<<Off>>W:<<Legends>>#";
 
@@ -55,9 +55,11 @@ lv_obj_t *default_screen;    // create root parent screen
 
 // widgets
 
+lv_obj_t* connection_tab;
 lv_obj_t* main_tabview;
 lv_obj_t* connection_status_label;
 lv_obj_t* connection_table;
+lv_obj_t* password_popup;
 
 // styles
 
@@ -104,6 +106,20 @@ void init_BLE_network_service();
 void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool* completed_message_indicator);
 void BLE_network_names_from_string(std::string networks_string, std::vector<Network>& networks);
 
+// callback functions
+
+// Forward declarations
+void open_password_popup(lv_event_t *e);
+static void connect_btn_event_handler(lv_event_t *e);
+static void textarea_event_handler(lv_event_t *e);
+static void keyboard_event_handler(lv_event_t *e);
+
+static void connect_btn_cb(lv_event_t *e);
+static void keyboard_delete_cb(lv_event_t *e);
+static void password_textarea_cb(lv_event_t *e);
+
+// Global variable to store the entered password
+static char password[64];
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -234,7 +250,7 @@ void setup()
     xTaskCreatePinnedToCore(
                     LVGL_handler_function,      /* Task function. */
                     "LVGL_handler_task",        /* name of task. */
-                    10000,                      /* Stack size of task */
+                    100000,                      /* Stack size of task */
                     NULL,                       /* parameter of the task */
                     1,                          /* priority of the task */
                     &LVGL_handler_task,         /* Task handle to keep track of created task */
@@ -282,16 +298,16 @@ void LVGL_handler_function(void * pvParameters){
 void init_tabs(){
     main_tabview = lv_tabview_create(default_screen, LV_DIR_TOP, MAIN_TABVIEW_HEIGHT);      //create main tabview
     init_connection_tab();
-    init_macros_tab();
-    init_PLEA_settings_tab();
-    init_settings_tab();
+    //init_macros_tab();
+    //init_PLEA_settings_tab();
+    //init_settings_tab();
 }
 
 void init_connection_tab(){
     /*
     *   This tab deals with connecting wifi/ethernet to PLEA
     */
-    lv_obj_t *connection_tab = lv_tabview_add_tab(main_tabview, "Connection");              //create main tabview
+    connection_tab = lv_tabview_add_tab(main_tabview, "Connection");              //create main tabview
     lv_obj_set_flex_flow(connection_tab, LV_FLEX_FLOW_ROW);
 
     lv_obj_t *connection_table_backdrop = lv_obj_create(connection_tab);
@@ -322,6 +338,7 @@ void init_connection_tab(){
     lv_table_set_col_width(connection_table, 2, 80);
     lv_coord_t table_width = lv_obj_get_width(connection_table);
     lv_table_set_col_width(connection_table, 1, 220);
+    lv_obj_add_event_cb(connection_table, open_password_popup, LV_EVENT_CLICKED, NULL);
 
     /*
     lv_coord_t table_width = lv_obj_get_width(connection_table);
@@ -362,6 +379,7 @@ void init_connection_tab(){
     lv_label_set_text(connect_btn_label, "Connect");
     lv_obj_add_style(connect_btn, &connect_btn_style, 0);
     lv_obj_add_style(connect_btn_label, &connect_btn_style, 0);
+    //lv_obj_add_event_cb(connect_btn, open_password_popup, LV_EVENT_CLICKED, NULL); // Add event callback on button press
 
     // Add search connections button
     lv_obj_t *srch_connections_btn = lv_btn_create(connection_buttons_backdrop);
@@ -370,19 +388,14 @@ void init_connection_tab(){
     lv_obj_add_style(srch_connections_btn, &connect_btn_style, 0);
     lv_obj_add_style(srch_connections_btn_label, &connect_btn_style, 0);
 
-    // Add password button
-    lv_obj_t *passwor_btn = lv_btn_create(connection_buttons_backdrop);
-    lv_obj_t *passwor_btn_label = lv_label_create(passwor_btn);
-    lv_label_set_text(passwor_btn_label, "Password");
-    lv_obj_add_style(passwor_btn, &connect_btn_style, 0);
-    lv_obj_add_style(passwor_btn_label, &connect_btn_style, 0);
-
+    /*
     // Add empty memory button
     lv_obj_t *empty_btn = lv_btn_create(connection_buttons_backdrop);
     lv_obj_t *empty_btn_label = lv_label_create(empty_btn);
     lv_label_set_text(empty_btn_label, "Empty");
     lv_obj_add_style(empty_btn, &connect_btn_style, 0);
     lv_obj_add_style(empty_btn_label, &connect_btn_style, 0);
+    */
 
     // Add IP button
     lv_obj_t *IP_btn = lv_btn_create(connection_buttons_backdrop);
@@ -456,8 +469,9 @@ void BLE_network_names_from_string(std::string networks_string, std::vector<Netw
     *   W:<<net123>>
     */
 
-    // Regular expression to extract network names and types
-    std::regex re(R"((W:|E:)<<([^>]+)>>)");
+    networks.clear();                           // Empty the vector before writing new networks
+
+    std::regex re(R"((W:|E:)<<([^>]+)>>)");     // Regular expression to extract network names and types
     std::smatch match;
     std::string::const_iterator searchStart(networks_string.cbegin());
 
@@ -549,3 +563,51 @@ void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool
     }
 }
 
+// EVENT CALLBACKS //
+
+void open_password_popup(lv_event_t *e)
+{
+    /*
+    lv_obj_t* table = lv_event_get_target(e);
+    uint16_t col;
+    uint16_t row;
+    lv_table_get_selected_cell(table, &row, &col);
+    */
+    
+    // Create pasword popup
+    static const char * btns[] = {"Apply", "", ""};
+
+    lv_obj_t * password_popup = lv_msgbox_create(NULL, "Hello", "This is a message box with two buttons.", btns, true);
+    lv_obj_add_event_cb(password_popup, connect_btn_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_center(password_popup);
+
+    // Set the size of the message box
+    lv_obj_set_size(password_popup, 400, 300);
+    
+    // Create a text area for password input
+    lv_obj_t* password_textarea = lv_textarea_create(password_popup);
+    lv_textarea_set_password_mode(password_textarea, true);
+    lv_textarea_set_one_line(password_textarea, true);
+    lv_textarea_set_placeholder_text(password_textarea, "Enter password");
+    lv_obj_set_width(password_textarea, LV_PCT(80));
+    lv_obj_center(password_textarea);
+    lv_obj_add_event_cb(password_textarea, password_textarea_cb, LV_EVENT_FOCUSED, NULL);
+}
+
+static void connect_btn_cb(lv_event_t *e) {
+    Serial.println("CONNECT_BUTTON_PRESSED");
+}
+
+static void password_textarea_cb(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t* password_textarea = lv_event_get_target(e);
+    if (code == LV_EVENT_FOCUSED) {
+        lv_obj_t* keyboard = lv_keyboard_create(lv_layer_top());  // Create keyboard
+        lv_keyboard_set_textarea(keyboard, password_textarea);  // Link the keyboard to the text area
+        lv_obj_add_event_cb(keyboard, keyboard_delete_cb, LV_EVENT_READY, NULL); // Register event callback for the keyboard
+    }
+}
+
+static void keyboard_delete_cb(lv_event_t *e){
+    lv_obj_del(lv_event_get_target(e)); // Deletes the keyboard when OK is pressed
+}
