@@ -283,10 +283,11 @@ void LVGL_handler_function(void * pvParameters){
     *   This task handles the LVGL timer as to
     *   free up the main loop
     */
-    for(;;) {
+    uint32_t timer_handler_time;
+    while(true){
         // Timer handler //
-        lv_timer_handler();     // don't touch this
-        delay(5);               //
+        timer_handler_time = lv_timer_handler();    // don't touch this
+        delay(timer_handler_time+30);               //
         //
     }
 }
@@ -298,9 +299,9 @@ void LVGL_handler_function(void * pvParameters){
 void init_tabs(){
     main_tabview = lv_tabview_create(default_screen, LV_DIR_TOP, MAIN_TABVIEW_HEIGHT);      //create main tabview
     init_connection_tab();
-    //init_macros_tab();
-    //init_PLEA_settings_tab();
-    //init_settings_tab();
+    init_macros_tab();
+    init_PLEA_settings_tab();
+    init_settings_tab();
 }
 
 void init_connection_tab(){
