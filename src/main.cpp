@@ -34,6 +34,8 @@ bool networks_string_received = false;
 bool network_string_completed = false; // must be 0 at the start
 bool connected_to_network = false;
 
+std::string string_chunks_array[20];
+
 // IP
 std::string IP_string;
 std::string IP_strings_array[20];   // max size - 10 strings
@@ -136,11 +138,13 @@ void BLE_array_from_string(std::string* IP_string, std::string* IP_strings_array
 // BLE functions
 void init_BLE();
 void init_BLE_network_service();
-void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool *completed_message_indicator);
+void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool* completed_message_indicator);
+int BLE_chunks_array_from_string(std::string* chunks_array, std::string& whole_string, uint16_t chunk_size);    // returns number of entrys in array
 void BLE_network_names_from_string(std::string networks_string, std::vector<Network> &networks);
 void send_simple_command_cb(lv_event_t *e);
 void connect_to_network(Network* network);
 void disconnect_from_network();
+void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_num);
 
 // callback functions
 
@@ -163,7 +167,7 @@ class ServerCallbacks : public BLEServerCallbacks
         // what to do on connection
         BLEdeviceConnected = true;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth connected");
-        Serial.println("Device connected");
+        Serial.println("BLE device connected");                 // Troubleshooting line
     };
 
     void onDisconnect(BLEServer *BLE_HMI_server)
@@ -171,9 +175,9 @@ class ServerCallbacks : public BLEServerCallbacks
         // what to do on disconnection
         BLEdeviceConnected = false;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth disconnected");
-        Serial.println("Device disconnected");
+        Serial.println("BLE device disconnected");              // Troubleshooting line
         no_connections_available(connection_table_backdrop);
-        BLEDevice::startAdvertising(); // wait for another connection
+        BLEDevice::startAdvertising(); // Wait for another connection
     }
 };
 
@@ -187,7 +191,7 @@ class recieveNetworkNamesCallback : public BLECharacteristicCallbacks
         if (BLE_received_string.length() > 0) {                     //
             Serial.println("*********");                            //
             Serial.print("Recieved string: ");                      //
-        for (int i = 0; i < BLE_received_string.length(); i++)      //  troubleshooting block
+        for (int i = 0; i < BLE_received_string.length(); i++)      //  Troubleshooting block
             Serial.print(BLE_received_string[i]);                   //
         Serial.println();                                           //
         Serial.println("*********");                                //
@@ -305,6 +309,8 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
+// CODE FLOW //
+
 void setup()
 {
     // Create a task to handle the LVGL updates
@@ -332,7 +338,6 @@ void loop()
             networks.clear();
             BLE_network_names_from_string(network_names_string, networks);
             put_network_names_in_table(networks);
-            
             network_names_string = "";
             network_string_completed = false;
             networks_string_received = false;
@@ -530,13 +535,19 @@ void put_network_names_in_table(const std::vector<Network> &networks)
         lv_table_set_cell_value(connection_table, i, 0, networks[i].type.c_str());
         lv_table_set_cell_value(connection_table, i, 1, networks[i].name.c_str());
         lv_table_set_cell_value(connection_table, i, 2, std::to_string(networks[i].table_entry_nmb).c_str());
-        Serial.print(networks[i].name.c_str()); // troubleshooting line
-        Serial.print(" entry: ");
-        Serial.println(networks[i].table_entry_nmb);
+        /*
+        Serial.print(networks[i].name.c_str());         //
+        Serial.print(" entry: ");                       // Troubleshooting line
+        Serial.println(networks[i].table_entry_nmb);    //
+        */
     }
 }
 
 void no_connections_available(lv_obj_t* backdrop){
+    /*
+    *   What to do when there are no connections available:
+    *   -remove table from backdrop and put label
+    */
     lv_obj_clean(backdrop);
     lv_obj_t* placeholder_label = lv_label_create(backdrop);
     lv_label_set_text(placeholder_label, "Networks unavailable.");
@@ -593,6 +604,37 @@ void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool
         Serial.println("*********");                    //
         */
     }
+}
+
+int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_string, uint16_t chunk_size)
+{
+    /*
+    *   Function takes in:
+    *   chunk_array[]       -where it will write chunks to
+    *   whole_string        -string to chop up into chunks
+    *   chunk_size          -size of chunks
+    * 
+    *   Returns number of entrys put into array
+    */
+    uint16_t string_length = whole_string.length();             // 
+    uint16_t num_chunks = string_length / chunk_size;           // Calculate number of chunks
+    uint16_t num_incomplete_chunk = string_length % chunk_size; // If there is a remainder
+
+    Serial.println("String array chunks: ");
+
+    uint16_t array_entry = 0;
+    for (uint16_t i = 0; i < string_length; i += chunk_size) {
+        chunks_array[array_entry] = whole_string.substr(i, chunk_size);
+        Serial.println(chunks_array[array_entry].c_str());
+        array_entry++;
+    }
+
+    if(num_incomplete_chunk != 0){
+        chunks_array[array_entry] = whole_string.substr(string_length - num_incomplete_chunk, num_incomplete_chunk);
+        Serial.println(chunks_array[array_entry].c_str());
+    }
+
+    return array_entry;
 }
 
 void BLE_network_names_from_string(std::string networks_string, std::vector<Network> &networks)
@@ -686,7 +728,7 @@ void init_BLE()
 {
 
     // Create the BLE Device
-    BLEDevice::init("PLEA HMI");
+    BLEDevice::init(BLE_SERVER_NAME);
 
     // Create the BLE Server
     BLE_HMI_server = BLEDevice::createServer();
@@ -762,16 +804,22 @@ void connect_to_network(Network* network){
     connect_info_string = connect_info_string + "<<" + network->name + ">>";
     connect_info_string = connect_info_string + "<<" + network->password + ">>" + '#';
 
+    int chunk_num;
     if(connected_to_network = true){
         disconnect_from_network();
-        BLE_network_commands_ch->setValue(connect_info_string);
-        BLE_network_commands_ch->notify();
-
+        chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
+        BLE_send_connect_network_info(string_chunks_array, chunk_num);
+        for(int i=0; i<chunk_num; i++){ //
+            string_chunks_array[i]="";  // Clear the string array after sending
+        }                               //
         connected_network = selected_network;
         connected_to_network = true;
     }else{
-        BLE_network_connect_ch->setValue(connect_info_string);
-        BLE_network_connect_ch->notify();
+        chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
+        BLE_send_connect_network_info(string_chunks_array, chunk_num);
+        for(int i=0; i<chunk_num; i++){ //
+            string_chunks_array[i]="";  // Clear the string array after sending
+        }                               //
         connected_network = selected_network;
         connected_to_network = true;
     }
@@ -783,6 +831,16 @@ void connect_to_network(Network* network){
 
 void disconnect_from_network(){
     connected_to_network = false;
+}
+
+void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_num){
+    Serial.println("Sent to PLEA: ");
+    for(int i=0; i<chunk_num; i++){
+        BLE_network_connect_ch->setValue(send_chunks_array[i].c_str());
+        BLE_network_connect_ch->notify();
+        Serial.println(send_chunks_array[i].c_str());
+        delay(3);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -802,14 +860,11 @@ void send_simple_command_cb(lv_event_t *e)
 void open_password_popup(lv_event_t *e)
 {
     /*
-    lv_event_code_t code = lv_event_get_code(e);            //
-    if (event_code_to_string(code) != "UNKNOWN_EVENT")      //
-    {                                                       //  Troubleshooting block
-        Serial.print("Event code: ");                       //
-        Serial.println(event_code_to_string(code));         //
-    }                                                       //
+    *
     */
-    Serial.println("POPUP");
+
+    //Serial.println("PASSWORD POPUP");
+
     // Get the clicked network
     lv_obj_t *table = lv_event_get_target(e);
     uint16_t row, col;

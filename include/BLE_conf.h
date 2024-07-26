@@ -1,4 +1,9 @@
 
+#define BLE_SERVER_NAME      "PLEA HMI"     // name of server that client will see
+
+#define BLE_CHUNK_SIZE              20      // how many char can be sent over BLE at once
+
+
 #define NETWORK_SERVICE_UUID                "9fd1e9cf-97f7-4b0b-9c90-caac19dba4f8"
 #define NETWORK_NAMES_CH_UUID               "0fd59f95-2c93-4bf8-b5f0-343e838fa302"
 #define NETWORK_CONNECT_CH_UUID             "15eb77c1-6581-4144-b510-37d09f4294ed"
