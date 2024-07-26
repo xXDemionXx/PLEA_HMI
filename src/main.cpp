@@ -140,6 +140,7 @@ void connect_to_network(Network* network);
 // callback functions
 
 void open_password_popup(lv_event_t *e);
+void open_IP_popup(std::string* strings_array, uint16_t* number_of_strings);
 static void textarea_event_handler(lv_event_t *e);
 void close_password_popup(lv_event_t *e);
 
@@ -323,8 +324,7 @@ void setup()
 void loop()
 {
     if (BLEdeviceConnected == true)
-    {   // If we are connected
-        // Check if we received a network_names_string
+    {
         if (networks_string_received == true)
         {
             networks.clear();
@@ -337,6 +337,8 @@ void loop()
         if (IP_string_received == true)
         {
             BLE_array_from_string(&IP_string, IP_strings_array, &IP_number_of_strings);
+            open_IP_popup(IP_strings_array, &IP_number_of_strings);
+            IP_string = "";
             IP_string_completed = false;
             IP_string_received = false;
         }
@@ -536,6 +538,31 @@ void no_connections_available(lv_obj_t* backdrop){
     lv_obj_set_align(placeholder_label, LV_ALIGN_CENTER);
 }
 
+void open_IP_popup(std::string* strings_array, uint16_t* number_of_strings){
+    /*
+    *   Function takes in an array of strings and
+    *   puts the elements of the array into a popup
+    *   message one under the other.
+    */
+    std::string message ="";
+    for(uint16_t i=0; i<(*number_of_strings); i++){
+        message += strings_array[i] + '\n';
+    }
+    
+    //Serial.println(message.c_str());    // Troubleshooting line
+
+    // IP popup create
+    lv_obj_t* IP_popup = lv_msgbox_create(NULL, "IP info", message.c_str(), NULL, true);
+    lv_obj_set_size(IP_popup, 300, 200);
+    lv_obj_center(IP_popup);
+
+    // Empty the array
+    for (uint16_t i = 0; i < *number_of_strings; i++) {
+        strings_array[i].clear();
+    }
+    *number_of_strings = 0;
+}
+
 // STRING FUNCTIONS //
 
 void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool *completed_message_indicator)
@@ -642,6 +669,7 @@ void BLE_array_from_string(std::string* whole_string, std::string* strings_array
     }                                               //
     Serial.println("*********");                    //
     */
+   
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
