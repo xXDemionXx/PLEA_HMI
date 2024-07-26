@@ -12,11 +12,12 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
-//#include <BLE2901/BLE2901.h>    // To solve some other time
+
 // custom
 #include <hardware.h>
 #include <UI_parameters.h>
 #include <BLE_conf.h>
+//#include <BLE2901/BLE2901.h>    // To solve some other time
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -31,6 +32,7 @@ std::string network_names_string;
 // Network flags
 bool networks_string_received = false;
 bool network_string_completed = false; // must be 0 at the start
+bool connected_to_network = false;
 
 // IP
 std::string IP_string;
@@ -54,7 +56,8 @@ std::string test_network_names = "W:<<Joe_Biden>>E:<<Donald_Trump>>W:<<Barack OB
 std::string test_IPs = "<<Joe>><<Shmoe>><<Boe>><<Koe>><<Doe>>";
 
 
-Network selected_network;       // holds the network that we will connect to
+Network selected_network;       // holds the network that we have selected in the table
+Network connected_network;      // holds the network that we will be connected to
 
 // LVGL VARIABLES //
 
@@ -87,8 +90,9 @@ lv_obj_t *password_popup;
 BLEServer *BLE_HMI_server = NULL;
 BLEService *BLE_network_service = NULL;
 BLECharacteristic *BLE_network_names_ch = NULL;
+BLECharacteristic *BLE_network_connect_ch = NULL;
 BLECharacteristic *BLE_IP_ch = NULL;
-BLECharacteristic *BLE_PLEA_network_commands_ch = NULL;
+BLECharacteristic *BLE_network_commands_ch = NULL;
 BLEAdvertising *BLE_advertising = NULL;
 bool BLEdeviceConnected = false;
 bool BLEolddeviceConnected = false;
@@ -136,6 +140,7 @@ void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool
 void BLE_network_names_from_string(std::string networks_string, std::vector<Network> &networks);
 void send_simple_command_cb(lv_event_t *e);
 void connect_to_network(Network* network);
+void disconnect_from_network();
 
 // callback functions
 
@@ -147,9 +152,6 @@ void close_password_popup(lv_event_t *e);
 static void password_popup_connect_btn_cb(lv_event_t *e);
 static void keyboard_delete_cb(lv_event_t *e);
 static void password_textarea_cb(lv_event_t *e);
-
-// Global variable to store the entered password
-static char password[64];
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -330,6 +332,7 @@ void loop()
             networks.clear();
             BLE_network_names_from_string(network_names_string, networks);
             put_network_names_in_table(networks);
+            
             network_names_string = "";
             network_string_completed = false;
             networks_string_received = false;
@@ -513,11 +516,14 @@ void put_network_names_in_table(const std::vector<Network> &networks)
 
     lv_obj_clean(connection_table_backdrop);
     connection_table = lv_table_create(connection_table_backdrop);
-    lv_obj_set_size(connection_table, LV_PCT(100), LV_PCT(100));
-    lv_table_set_col_cnt(connection_table, 3);
-    lv_table_set_col_width(connection_table, 0, 80);
-    lv_table_set_col_width(connection_table, 2, 80);
-    lv_table_set_col_width(connection_table, 1, 220);
+    lv_obj_remove_event_cb(connection_table, open_password_popup);  // If we don't remove previous callback, the callback will happen twice
+    lv_obj_add_event_cb(connection_table, open_password_popup, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_set_size(connection_table, LV_PCT(100), LV_PCT(100));    // Make it takeup the whole backdrop
+    lv_table_set_col_cnt(connection_table, 3);                      //
+    lv_table_set_col_width(connection_table, 0, 80);                //
+    lv_table_set_col_width(connection_table, 2, 80);                //
+    lv_table_set_col_width(connection_table, 1, 220);               //
+    
     
     for (byte i = 0; i < number_of_networks; i++)
     {
@@ -534,8 +540,8 @@ void no_connections_available(lv_obj_t* backdrop){
     lv_obj_clean(backdrop);
     lv_obj_t* placeholder_label = lv_label_create(backdrop);
     lv_label_set_text(placeholder_label, "Networks unavailable.");
-    //lv_obj_center(placeholder_label);
-    lv_obj_set_align(placeholder_label, LV_ALIGN_CENTER);
+    lv_obj_center(placeholder_label);
+    //lv_obj_set_align(placeholder_label, LV_ALIGN_CENTER);
 }
 
 void open_IP_popup(std::string* strings_array, uint16_t* number_of_strings){
@@ -714,23 +720,31 @@ void init_BLE_network_service()
         BLECharacteristic::PROPERTY_WRITE);
     BLE_network_names_ch->setCallbacks(new recieveNetworkNamesCallback()); // Add callback on recieve from client
 
+    // Create BLE_network_connect_ch characteristic
+    // It sends network type, name and password of the network we want to connect to
+    BLE_network_connect_ch = BLE_network_service->createCharacteristic(
+        NETWORK_CONNECT_CH_UUID,
+        BLECharacteristic::PROPERTY_READ |
+        BLECharacteristic::PROPERTY_NOTIFY);
+    BLE_network_connect_ch->addDescriptor(new BLE2902()); // Add a BLE descriptor for notifications
+
     // Create BLE_IP_ch characteristic
     // It is intended for receiveing IPs from Raspberry PI
     BLE_IP_ch = BLE_network_service->createCharacteristic(
-        NETWORK_NAMES_CH_UUID,
+        NETWORK_IP_CH_UUID,
         BLECharacteristic::PROPERTY_READ |
         BLECharacteristic::PROPERTY_WRITE);
-    BLE_network_names_ch->setCallbacks(new recieveIPCallback()); // Add callback on recieve from client
+    BLE_IP_ch->setCallbacks(new recieveIPCallback()); // Add callback on recieve from client
 
 
-    // Create BLE_PLEA_network_commands_ch characteristic
+    // Create BLE_network_commands_ch characteristic
     // It sends simple commands via buttons
-    BLE_PLEA_network_commands_ch = BLE_network_service->createCharacteristic(
-        PLEA_NETWORK_COMMANDS_CH_UUID,
+    BLE_network_commands_ch = BLE_network_service->createCharacteristic(
+        NETWORK_COMMANDS_CH_UUID,
         BLECharacteristic::PROPERTY_READ |
         BLECharacteristic::PROPERTY_NOTIFY);
+    BLE_network_commands_ch->addDescriptor(new BLE2902()); // Add a BLE descriptor for notifications
 
-    BLE_PLEA_network_commands_ch->addDescriptor(new BLE2902()); // Add a BLE descriptor for notifications
 
     BLE_advertising->addServiceUUID(NETWORK_SERVICE_UUID); // Add BLE_network_service to advertising
 
@@ -747,8 +761,28 @@ void connect_to_network(Network* network){
     }
     connect_info_string = connect_info_string + "<<" + network->name + ">>";
     connect_info_string = connect_info_string + "<<" + network->password + ">>" + '#';
-    Serial.println("This will be sent to Raspberry PI:");
-    Serial.println(connect_info_string.c_str());
+
+    if(connected_to_network = true){
+        disconnect_from_network();
+        BLE_network_commands_ch->setValue(connect_info_string);
+        BLE_network_commands_ch->notify();
+
+        connected_network = selected_network;
+        connected_to_network = true;
+    }else{
+        BLE_network_connect_ch->setValue(connect_info_string);
+        BLE_network_connect_ch->notify();
+        connected_network = selected_network;
+        connected_to_network = true;
+    }
+    /*
+    Serial.println("This will be sent to Raspberry PI:");   // Troubleshooting block
+    Serial.println(connect_info_string.c_str());            //
+    */
+}
+
+void disconnect_from_network(){
+    connected_to_network = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -759,8 +793,8 @@ void send_simple_command_cb(lv_event_t *e)
 {
     char command = *(char *)lv_event_get_user_data(e); // Get the command from user_data
     std::string command_str(1, command);               //
-    BLE_PLEA_network_commands_ch->setValue(command_str);       //
-    BLE_PLEA_network_commands_ch->notify();                    //
+    BLE_network_commands_ch->setValue(command_str);    //
+    BLE_network_commands_ch->notify();                 //
 }
 
 // EVENT CALLBACKS //
