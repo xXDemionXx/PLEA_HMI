@@ -103,8 +103,9 @@ const char PLEA_commands[] = {
      *   This are simple commands that will
      *   be sent to PLEA via buttons.
      */
-    SEARCH_NETWORKS_COMMAND, // [0] -serch for networks
-    REQUEST_IP_COMMAND,      // [1] -send IP
+    SEARCH_NETWORKS_COMMAND,    // [0] -serch for networks
+    REQUEST_IP_COMMAND,         // [1] -send IP
+    DISCONNECT_NETWORK_COMMAND  // [2] -disconnect network
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -448,17 +449,6 @@ void init_connection_tab()
     lv_label_set_text(NET_connection_status_label, "Network disconnected");
     lv_obj_set_align(NET_connection_status_label, LV_ALIGN_BOTTOM_MID);
 
-    /*
-    // Add connect/disconnect button - it can connect or disconnect
-    lv_obj_t *connect_btn = lv_btn_create(connection_buttons_backdrop);
-    lv_obj_t *connect_btn_label = lv_label_create(connect_btn);
-    lv_label_set_text(connect_btn_label, "Connect");
-    lv_obj_add_style(connect_btn, &connect_btn_style, 0);
-    lv_obj_add_style(connect_btn_label, &connect_btn_style, 0);
-    //lv_obj_add_event_cb(connect_btn, open_password_popup, LV_EVENT_CLICKED, NULL); // Add event callback on button press
-    lv_obj_center(connect_btn_label);
-    */
-
     // Add search connections button
     lv_obj_t *srch_networks_btn = lv_btn_create(connection_buttons_backdrop);
     lv_obj_t *srch_networks_btn_label = lv_label_create(srch_networks_btn);
@@ -468,14 +458,14 @@ void init_connection_tab()
     lv_obj_add_event_cb(srch_networks_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void *)&PLEA_commands[0]); // Send 's'
     lv_obj_center(srch_networks_btn_label);
 
-    /*
-    // Add empty memory button
-    lv_obj_t *empty_btn = lv_btn_create(connection_buttons_backdrop);
-    lv_obj_t *empty_btn_label = lv_label_create(empty_btn);
-    lv_label_set_text(empty_btn_label, "Empty");
-    lv_obj_add_style(empty_btn, &connect_btn_style, 0);
-    lv_obj_add_style(empty_btn_label, &connect_btn_style, 0);
-    */
+    // Add disconnect network button
+    lv_obj_t *disconnect_network_btn = lv_btn_create(connection_buttons_backdrop);
+    lv_obj_t *disconnect_network_btn_label = lv_label_create(disconnect_network_btn);
+    lv_label_set_text(disconnect_network_btn_label, "Disconnect network");
+    lv_obj_add_style(disconnect_network_btn, &connect_btn_style, 0);
+    lv_obj_add_style(disconnect_network_btn_label, &connect_btn_style, 0);
+    lv_obj_add_event_cb(disconnect_network_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void *)&PLEA_commands[2]); // Send 'd'
+    lv_obj_center(disconnect_network_btn_label);
 
     // Add IP button
     lv_obj_t *IP_btn = lv_btn_create(connection_buttons_backdrop);
