@@ -17,7 +17,7 @@
 #include <hardware.h>
 #include <UI_parameters.h>
 #include <BLE_conf.h>
-// #include <BLE2901/BLE2901.h>    // To solve some other time
+//#include <BLE2901/BLE2901.h>    // To solve some other time
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -27,25 +27,22 @@ TaskHandle_t LVGL_handler_task; // goes on core0
 // VARIABLES //
 
 // Network
-std::vector<std::string> networkNames;  // names of networks WiFi or Ethernet
+std::vector<std::string> networkNames; // names of networks WiFi or Ethernet
 std::string network_names_string;
-std::string network_con_status_string;  // connection status message from PLEA
 // Network flags
 bool networks_string_received = false;
 bool network_string_completed = false; // must be 0 at the start
 bool connected_to_network = false;
 
-bool network_con_status_completed = false; // must be 0 at the start
-
 std::string string_chunks_array[20];
 
-// IP
-std::string IP_string;
-std::string IP_strings_array[20]; // max size - 10 strings
-uint16_t IP_number_of_strings;
-// IP flags
-bool IP_string_received = false;
-bool IP_string_completed = false; // must be 0 at the start
+// network messages
+std::string message_string;
+std::string network_message_array[20];   // max size - 10 strings
+uint16_t message_number_of_strings;
+// message flags
+bool message_string_received = false;
+bool message_string_completed = false; // must be 0 at the start
 
 // Struct that holds network information
 struct Network
@@ -55,13 +52,14 @@ struct Network
     std::string password; //
     byte table_entry_nmb; //
 };
-std::vector<Network> networks; // vector that holds network names
+std::vector<Network> networks;  // vector that holds network names
 
 std::string test_network_names = "W:<<Joe_Biden>>E:<<Donald_Trump>>W:<<Barack OBAMA>>W:<<Hillary Clinton>>E:<<gogo>>W:<<Zelinski>>E:<<Sheisty>>E:<<KOKO>>W:<<AMERICA>>E:<<LOLO>>W:<<League>>E:<<Off>>W:<<Legends>>#";
 std::string test_IPs = "<<Joe>><<Shmoe>><<Boe>><<Koe>><<Doe>>";
 
-Network selected_network;  // holds the network that we have selected in the table
-Network connected_network; // holds the network that we will be connected to
+
+Network selected_network;       // holds the network that we have selected in the table
+Network connected_network;      // holds the network that we will be connected to
 
 // LVGL VARIABLES //
 
@@ -74,7 +72,6 @@ static lv_disp_drv_t disp_drv;
 lv_obj_t *default_screen; // create root parent screen
 
 // widgets
-
 lv_obj_t *connection_table_backdrop;
 lv_obj_t *connection_tab;
 lv_obj_t *main_tabview;
@@ -95,8 +92,7 @@ BLEServer *BLE_HMI_server = NULL;
 BLEService *BLE_network_service = NULL;
 BLECharacteristic *BLE_network_names_ch = NULL;
 BLECharacteristic *BLE_network_connect_ch = NULL;
-BLECharacteristic *BLE_network_con_stat_ch = NULL;
-BLECharacteristic *BLE_IP_ch = NULL;
+BLECharacteristic *BLE_network_message_ch = NULL;
 BLECharacteristic *BLE_network_commands_ch = NULL;
 BLEAdvertising *BLE_advertising = NULL;
 bool BLEdeviceConnected = false;
@@ -107,9 +103,8 @@ const char PLEA_commands[] = {
      *   This are simple commands that will
      *   be sent to PLEA via buttons.
      */
-    SEARCH_NETWORKS_COMMAND,    // [0] -serch for networks
-    REQUEST_IP_COMMAND,         // [1] -send IP
-    DISCONNECT_NETWORK_COMMAND  // [2] -disconnect network
+    SEARCH_NETWORKS_COMMAND, // [0] -serch for networks
+    REQUEST_IP_COMMAND,      // [1] -send IP
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -128,7 +123,7 @@ void init_settings_tab();
 void init_PLEA_settings_tab();
 
 // UI functions
-void no_connections_available(lv_obj_t *backdrop);
+void no_connections_available(lv_obj_t* backdrop);
 
 // LVGL task
 void LVGL_handler_function(void *pvParameters);
@@ -137,23 +132,23 @@ void LVGL_handler_function(void *pvParameters);
 void put_network_names_in_table(const std::vector<Network> &networkss);
 
 // IP string operation
-void BLE_array_from_string(std::string *IP_string, std::string *IP_strings_array, uint16_t *number_of_strings);
+void BLE_array_from_string(std::string* message_string, std::string* network_message_array, uint16_t* number_of_strings);
 
 // BLE functions
 void init_BLE();
 void init_BLE_network_service();
-void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool *completed_message_indicator);
-int BLE_chunks_array_from_string(std::string *chunks_array, std::string &whole_string, uint16_t chunk_size); // returns number of entrys in array
+void BLE_string_from_chunks(std::string chunk, std::string* storage_string, bool* completed_message_indicator);
+int BLE_chunks_array_from_string(std::string* chunks_array, std::string& whole_string, uint16_t chunk_size);    // returns number of entrys in array
 void BLE_network_names_from_string(std::string networks_string, std::vector<Network> &networks);
 void send_simple_command_cb(lv_event_t *e);
-void connect_to_network(Network *network);
+void connect_to_network(Network* network);
 void disconnect_from_network();
-void BLE_send_connect_network_info(std::string *send_chunks_array, int &chunk_num);
+void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_num);
 
 // callback functions
 
 void open_password_popup(lv_event_t *e);
-void open_IP_popup(std::string *strings_array, uint16_t *number_of_strings);
+void open_message_popup(std::string* strings_array, uint16_t* number_of_strings);
 static void textarea_event_handler(lv_event_t *e);
 void close_password_popup(lv_event_t *e);
 
@@ -171,7 +166,7 @@ class ServerCallbacks : public BLEServerCallbacks
         // what to do on connection
         BLEdeviceConnected = true;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth connected");
-        Serial.println("BLE device connected"); // Troubleshooting line
+        Serial.println("BLE device connected");                 // Troubleshooting line
     };
 
     void onDisconnect(BLEServer *BLE_HMI_server)
@@ -179,14 +174,13 @@ class ServerCallbacks : public BLEServerCallbacks
         // what to do on disconnection
         BLEdeviceConnected = false;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth disconnected");
-        Serial.println("BLE device disconnected"); // Troubleshooting line
+        Serial.println("BLE device disconnected");              // Troubleshooting line
         no_connections_available(connection_table_backdrop);
-        lv_label_set_text(NET_connection_status_label, "Network status: UNKNOWN");
         BLEDevice::startAdvertising(); // Wait for another connection
     }
 };
 
-// class that deals with receiving string chunks from client
+// class that deals with receiving network string chunks from client
 class recieveNetworkNamesCallback : public BLECharacteristicCallbacks
 {
     void onWrite(BLECharacteristic *receiver_characteristic)
@@ -211,8 +205,8 @@ class recieveNetworkNamesCallback : public BLECharacteristicCallbacks
     }
 };
 
-// class that deals with receiving string chunks from client
-class recieveIPCallback : public BLECharacteristicCallbacks
+// class that deals with receiving message string chunks from client
+class recieveMessageCallback : public BLECharacteristicCallbacks
 {
     void onWrite(BLECharacteristic *receiver_characteristic)
     {
@@ -227,48 +221,11 @@ class recieveIPCallback : public BLECharacteristicCallbacks
         Serial.println("*********");                                //
         }
         */
-        BLE_string_from_chunks(BLE_received_string, &IP_string, &IP_string_completed);
-        if (IP_string_completed)
+        BLE_string_from_chunks(BLE_received_string, &message_string, &message_string_completed);
+        if (message_string_completed)
         {
-            IP_string_received = true;
-            IP_string_completed = false;
-        }
-    }
-};
-
-// class that deals with receiving string chunks from client
-class recieveNetworkConnectionStatusCallback : public BLECharacteristicCallbacks
-{
-    void onWrite(BLECharacteristic *receiver_characteristic)
-    {
-        std::string BLE_received_string = receiver_characteristic->getValue();
-        /*
-        if (BLE_received_string.length() > 0) {                     //
-            Serial.println("*********");                            //
-            Serial.print("Recieved string: ");                      //
-        for (int i = 0; i < BLE_received_string.length(); i++)      //  Troubleshooting block
-            Serial.print(BLE_received_string[i]);                   //
-        Serial.println();                                           //
-        Serial.println("*********");                                //
-        }
-        */
-        Serial.println("OBAMINIUM");
-        BLE_string_from_chunks(BLE_received_string, &network_con_status_string, &network_con_status_completed);
-        if (network_con_status_completed)
-        {
-            Serial.println("BONGO");
-            if(network_con_status_string == "NC#"){
-                lv_label_set_text(NET_connection_status_label, "Network disconnected");
-                
-                Serial.println("Network disconnected");
-            }else{
-                Serial.println("HONGO");
-                lv_label_set_text(NET_connection_status_label, network_con_status_string.c_str());
-                BLEdeviceConnected = true;
-                Serial.println(network_con_status_string.c_str());
-            }
-            network_con_status_string = "";
-            network_con_status_completed = false;
+            message_string_received = true;
+            message_string_completed = false;
         }
     }
 };
@@ -384,13 +341,13 @@ void loop()
             network_string_completed = false;
             networks_string_received = false;
         }
-        if (IP_string_received == true)
+        if (message_string_received == true)
         {
-            BLE_array_from_string(&IP_string, IP_strings_array, &IP_number_of_strings);
-            open_IP_popup(IP_strings_array, &IP_number_of_strings);
-            IP_string = "";
-            IP_string_completed = false;
-            IP_string_received = false;
+            BLE_array_from_string(&message_string, network_message_array, &message_number_of_strings);
+            open_message_popup(network_message_array, &message_number_of_strings);
+            message_string = "";
+            message_string_completed = false;
+            message_string_received = false;
         }
     }
 }
@@ -488,7 +445,7 @@ void init_connection_tab()
     lv_obj_set_align(BLE_connection_status_label, LV_ALIGN_TOP_MID);
 
     NET_connection_status_label = lv_label_create(con_indicator_backdrop);
-    lv_label_set_text(NET_connection_status_label, "Network status: UNKNOWN");
+    lv_label_set_text(NET_connection_status_label, "Network disconnected");
     lv_obj_set_align(NET_connection_status_label, LV_ALIGN_BOTTOM_MID);
 
     /*
@@ -528,15 +485,6 @@ void init_connection_tab()
     lv_obj_add_style(IP_btn_label, &connect_btn_style, 0);
     lv_obj_add_event_cb(IP_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void *)&PLEA_commands[1]); // Send 'p'
     lv_obj_center(IP_btn_label);
-
-    // Add search network disconnect button
-    lv_obj_t *net_disconnect_btn = lv_btn_create(connection_buttons_backdrop);
-    lv_obj_t *net_disconnect_btn_label = lv_label_create(net_disconnect_btn);
-    lv_label_set_text(net_disconnect_btn_label, "Disconnect network");
-    lv_obj_add_style(net_disconnect_btn, &connect_btn_style, 0);
-    lv_obj_add_style(net_disconnect_btn_label, &connect_btn_style, 0);
-    lv_obj_add_event_cb(net_disconnect_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void *)&PLEA_commands[2]); // Send 'd'
-    lv_obj_center(net_disconnect_btn_label);
 }
 
 void init_macros_tab()
@@ -572,14 +520,15 @@ void put_network_names_in_table(const std::vector<Network> &networks)
 
     lv_obj_clean(connection_table_backdrop);
     connection_table = lv_table_create(connection_table_backdrop);
-    lv_obj_remove_event_cb(connection_table, open_password_popup); // If we don't remove previous callback, the callback will happen twice
+    lv_obj_remove_event_cb(connection_table, open_password_popup);  // If we don't remove previous callback, the callback will happen twice
     lv_obj_add_event_cb(connection_table, open_password_popup, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_set_size(connection_table, LV_PCT(100), LV_PCT(100)); // Make it takeup the whole backdrop
-    lv_table_set_col_cnt(connection_table, 3);                   //
-    lv_table_set_col_width(connection_table, 0, 80);             //
-    lv_table_set_col_width(connection_table, 2, 80);             //
-    lv_table_set_col_width(connection_table, 1, 220);            //
-
+    lv_obj_set_size(connection_table, LV_PCT(100), LV_PCT(100));    // Make it takeup the whole backdrop
+    lv_table_set_col_cnt(connection_table, 3);                      //
+    lv_table_set_col_width(connection_table, 0, 80);                //
+    lv_table_set_col_width(connection_table, 2, 80);                //
+    lv_table_set_col_width(connection_table, 1, 220);               //
+    
+    
     for (byte i = 0; i < number_of_networks; i++)
     {
         lv_table_set_cell_value(connection_table, i, 0, networks[i].type.c_str());
@@ -593,42 +542,39 @@ void put_network_names_in_table(const std::vector<Network> &networks)
     }
 }
 
-void no_connections_available(lv_obj_t *backdrop)
-{
+void no_connections_available(lv_obj_t* backdrop){
     /*
-     *   What to do when there are no connections available:
-     *   -remove table from backdrop and put label
-     */
+    *   What to do when there are no connections available:
+    *   -remove table from backdrop and put label
+    */
     lv_obj_clean(backdrop);
-    lv_obj_t *placeholder_label = lv_label_create(backdrop);
+    lv_obj_t* placeholder_label = lv_label_create(backdrop);
     lv_label_set_text(placeholder_label, "Networks unavailable.");
     lv_obj_center(placeholder_label);
-    // lv_obj_set_align(placeholder_label, LV_ALIGN_CENTER);
+    //lv_obj_set_align(placeholder_label, LV_ALIGN_CENTER);
 }
 
-void open_IP_popup(std::string* strings_array, uint16_t* number_of_strings)
-{
+void open_message_popup(std::string* strings_array, uint16_t* number_of_strings){
     /*
-     *   Function takes in an array of strings and
-     *   puts the elements of the array into a popup
-     *   message one under the other.
-     */
-    std::string message = "";
-    for (uint16_t i = 0; i < (*number_of_strings); i++)
-    {
+    *   Function takes in an array of strings and
+    *   puts the elements of the array into a popup
+    *   message one under the other.
+    */
+    std::string message ="";
+    std::string title = strings_array[0];
+    for(uint16_t i=1; i<(*number_of_strings); i++){
         message += strings_array[i] + '\n';
     }
-
-    // Serial.println(message.c_str());    // Troubleshooting line
+    
+    //Serial.println(message.c_str());    // Troubleshooting line
 
     // IP popup create
-    lv_obj_t *IP_popup = lv_msgbox_create(NULL, "IP info", message.c_str(), NULL, true);
-    lv_obj_set_size(IP_popup, 300, 200);
-    lv_obj_center(IP_popup);
+    lv_obj_t* message_popup = lv_msgbox_create(NULL, title.c_str(), message.c_str(), NULL, true);
+    lv_obj_set_size(message_popup, 400, 300);
+    lv_obj_center(message_popup);
 
     // Empty the array
-    for (uint16_t i = 0; i < *number_of_strings; i++)
-    {
+    for (uint16_t i = 0; i < *number_of_strings; i++) {
         strings_array[i].clear();
     }
     *number_of_strings = 0;
@@ -660,32 +606,30 @@ void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool
     }
 }
 
-int BLE_chunks_array_from_string(std::string *chunks_array, std::string &whole_string, uint16_t chunk_size)
+int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_string, uint16_t chunk_size)
 {
     /*
-     *   Function takes in:
-     *   chunk_array[]       -where it will write chunks to
-     *   whole_string        -string to chop up into chunks
-     *   chunk_size          -size of chunks
-     *
-     *   Returns number of entrys put into array
-     */
-    uint16_t string_length = whole_string.length();             //
+    *   Function takes in:
+    *   chunk_array[]       -where it will write chunks to
+    *   whole_string        -string to chop up into chunks
+    *   chunk_size          -size of chunks
+    * 
+    *   Returns number of entrys put into array
+    */
+    uint16_t string_length = whole_string.length();             // 
     uint16_t num_chunks = string_length / chunk_size;           // Calculate number of chunks
     uint16_t num_incomplete_chunk = string_length % chunk_size; // If there is a remainder
 
     Serial.println("String array chunks: ");
 
     uint16_t array_entry = 0;
-    for (uint16_t i = 0; i < string_length; i += chunk_size)
-    {
+    for (uint16_t i = 0; i < string_length; i += chunk_size) {
         chunks_array[array_entry] = whole_string.substr(i, chunk_size);
         Serial.println(chunks_array[array_entry].c_str());
         array_entry++;
     }
 
-    if (num_incomplete_chunk != 0)
-    {
+    if(num_incomplete_chunk != 0){
         chunks_array[array_entry] = whole_string.substr(string_length - num_incomplete_chunk, num_incomplete_chunk);
         Serial.println(chunks_array[array_entry].c_str());
     }
@@ -741,8 +685,7 @@ void BLE_network_names_from_string(std::string networks_string, std::vector<Netw
     */
 }
 
-void BLE_array_from_string(std::string *whole_string, std::string *strings_array, uint16_t *number_of_strings)
-{
+void BLE_array_from_string(std::string* whole_string, std::string* strings_array, uint16_t* number_of_strings){
     /*
      *   Chops a string into individual strings and puts
      *   them in an array.
@@ -774,6 +717,7 @@ void BLE_array_from_string(std::string *whole_string, std::string *strings_array
     }                                               //
     Serial.println("*********");                    //
     */
+   
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -826,12 +770,14 @@ void init_BLE_network_service()
         BLECharacteristic::PROPERTY_NOTIFY);
     BLE_network_connect_ch->addDescriptor(new BLE2902()); // Add a BLE descriptor for notifications
 
-    // Create BLE_IP_ch characteristic
+    // Create BLE_network_message_ch characteristic
     // It is intended for receiveing IPs from Raspberry PI
-    BLE_IP_ch = BLE_network_service->createCharacteristic(
-        NETWORK_IP_CH_UUID,
+    BLE_network_message_ch = BLE_network_service->createCharacteristic(
+        NETWORK_MESSAGE_CH_UUID,
+        BLECharacteristic::PROPERTY_READ |
         BLECharacteristic::PROPERTY_WRITE);
-    BLE_IP_ch->setCallbacks(new recieveIPCallback()); // Add callback on recieve from client
+    BLE_network_message_ch->setCallbacks(new recieveMessageCallback()); // Add callback on recieve from client
+
 
     // Create BLE_network_commands_ch characteristic
     // It sends simple commands via buttons
@@ -841,55 +787,41 @@ void init_BLE_network_service()
         BLECharacteristic::PROPERTY_NOTIFY);
     BLE_network_commands_ch->addDescriptor(new BLE2902()); // Add a BLE descriptor for notifications
 
-    // Create BLE_con_status_ch characteristic
-    // It sends simple commands via buttons
-    BLE_network_con_stat_ch = BLE_network_service->createCharacteristic(
-        NETWORK_CON_STATUS_CH_UUID,
-        BLECharacteristic::PROPERTY_READ |
-        BLECharacteristic::PROPERTY_WRITE);
-    BLE_network_con_stat_ch->setCallbacks(new recieveNetworkConnectionStatusCallback()); // Add callback on recieve from client
 
     BLE_advertising->addServiceUUID(NETWORK_SERVICE_UUID); // Add BLE_network_service to advertising
 
     BLE_network_service->start(); // Start the service
 }
 
-void connect_to_network(Network *network)
-{
+// NETWORK FUNCTIONS //
+
+void connect_to_network(Network* network){
     // Construct string that will be sent to Raspberry PI
     std::string connect_info_string = "";
-    if (network->type == "WiFi")
-    {
+    if(network->type == "WiFi"){
         connect_info_string = "<<W:>>";
-    }
-    else if (network->type == "Eth")
-    {
+    }else if(network->type == "Eth"){
         connect_info_string = "<<E:>>";
     }
     connect_info_string = connect_info_string + "<<" + network->name + ">>";
     connect_info_string = connect_info_string + "<<" + network->password + ">>" + '#';
 
     int chunk_num;
-    if (connected_to_network = true)
-    {
+    if(connected_to_network = true){
         disconnect_from_network();
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
-        for (int i = 0; i < chunk_num; i++)
-        {                                //
-            string_chunks_array[i] = ""; // Clear the string array after sending
-        } //
+        for(int i=0; i<chunk_num; i++){ //
+            string_chunks_array[i]="";  // Clear the string array after sending
+        }                               //
         connected_network = selected_network;
         connected_to_network = true;
-    }
-    else
-    {
+    }else{
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
-        for (int i = 0; i < chunk_num; i++)
-        {                                //
-            string_chunks_array[i] = ""; // Clear the string array after sending
-        } //
+        for(int i=0; i<chunk_num; i++){ //
+            string_chunks_array[i]="";  // Clear the string array after sending
+        }                               //
         connected_network = selected_network;
         connected_to_network = true;
     }
@@ -899,19 +831,16 @@ void connect_to_network(Network *network)
     */
 }
 
-void disconnect_from_network()
-{
+void disconnect_from_network(){
     connected_to_network = false;
 }
 
-void BLE_send_connect_network_info(std::string *send_chunks_array, int &chunk_num)
-{
-    //Serial.println("Sent to PLEA: "); // Troubleshooting line
-    for (int i = 0; i < chunk_num; i++)
-    {
+void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_num){
+    Serial.println("Sent to PLEA: ");
+    for(int i=0; i<chunk_num; i++){
         BLE_network_connect_ch->setValue(send_chunks_array[i].c_str());
         BLE_network_connect_ch->notify();
-        //Serial.println(send_chunks_array[i].c_str()); // Troubleshooting line
+        Serial.println(send_chunks_array[i].c_str());
         delay(3);
     }
 }
@@ -933,21 +862,21 @@ void send_simple_command_cb(lv_event_t *e)
 void open_password_popup(lv_event_t *e)
 {
     /*
-     *
-     */
+    *
+    */
 
-    // Serial.println("PASSWORD POPUP");
+    //Serial.println("PASSWORD POPUP");
 
     // Get the clicked network
     lv_obj_t *table = lv_event_get_target(e);
     uint16_t row, col;
     lv_table_get_selected_cell(table, &row, &col);
-    const char *network_name = lv_table_get_cell_value(table, row, 1);
-    const char *msg_prt1 = "Connect to: ";
+    const char* network_name = lv_table_get_cell_value(table, row, 1);
+    const char* msg_prt1 = "Connect to: ";
     char pupup_message[50];
     snprintf(pupup_message, sizeof(pupup_message), "%s%s", msg_prt1, network_name);
 
-    selected_network.name = network_name; // Assign the selected network
+    selected_network.name = network_name;       // Assign the selected network
     selected_network.type = lv_table_get_cell_value(table, row, 0);
 
     // Create pasword popup
@@ -1010,9 +939,9 @@ static void keyboard_delete_cb(lv_event_t *e)
 {
     lv_obj_t *keyboard = lv_event_get_target(e);
     lv_obj_t *text_area = (lv_obj_t *)lv_event_get_user_data(e);
-    lv_obj_del(lv_event_get_target(e)); // Deletes the keyboard when OK is pressed
+    lv_obj_del(lv_event_get_target(e));     // Deletes the keyboard when OK is pressed
     // lv_event_send(text_area, LV_EVENT_DEFOCUSED, NULL);
-    lv_obj_clear_state(text_area, LV_STATE_FOCUSED); // Ensure text area is not focused
+    lv_obj_clear_state(text_area, LV_STATE_FOCUSED);        // Ensure text area is not focused
     selected_network.password = lv_textarea_get_text(text_area);
 }
 
@@ -1036,7 +965,7 @@ static void password_popup_connect_btn_cb(lv_event_t *e)
     Serial.println(network_to_connect_to->type.c_str());        //
     */
 
-    connect_to_network((Network *)lv_event_get_user_data(e));
+    connect_to_network((Network*) lv_event_get_user_data(e));
 
     selected_network.name = "";     //
     selected_network.password = ""; // Clear the selected network
