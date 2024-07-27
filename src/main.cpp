@@ -154,6 +154,10 @@ static void password_popup_connect_btn_cb(lv_event_t *e);
 static void keyboard_delete_cb(lv_event_t *e);
 static void password_textarea_cb(lv_event_t *e);
 
+
+// message
+void handle_net_message(std::string* strings_array, uint16_t* number_of_strings);
+void display_network_con_status(std::string* status_array);
 ////////////////////////////////////////////////////////////////////////////////////////////
 
 // connect/disconnect callback class
@@ -341,7 +345,8 @@ void loop()
         if (IP_string_received == true)
         {
             BLE_array_from_string(&IP_string, IP_strings_array, &IP_number_of_strings);
-            open_IP_popup(IP_strings_array, &IP_number_of_strings);
+            //open_IP_popup(IP_strings_array, &IP_number_of_strings);
+            handle_net_message(IP_strings_array, &IP_number_of_strings);
             IP_string = "";
             IP_string_completed = false;
             IP_string_received = false;
@@ -579,6 +584,71 @@ void open_IP_popup(std::string* strings_array, uint16_t* number_of_strings){
     *number_of_strings = 0;
 }
 
+// NETWORK FUNCTIONS //
+
+void handle_net_message(std::string* strings_array, uint16_t* number_of_strings) {
+    /*
+    *   Function takes in an array of strings and
+    *   puts the elements of the array into a popup
+    *   message one under the other.
+    */
+
+    if (strings_array[0].length() == 1) {         // If the first string from the array is a single char then it is a command
+        char command = strings_array[0][0]; // Gives the char in the first string from the array
+        Serial.print("Command: ");
+        Serial.println(command);
+        switch (command) {
+            case NETWORK_CON_MESSAGE:
+                Serial.println("NET CONNECTED");
+                display_network_con_status(strings_array);
+                break;
+            case NETWORK_DISCON_MESSAGE:
+                Serial.println("NET DISCONNECTED");
+                //disconnect_from_network();
+                break;
+        }
+    } else {
+        Serial.println("MESSAGE");
+        /*
+        std::string message ="";
+        for(uint16_t i=0; i<(*number_of_strings); i++){
+            message += strings_array[i] + '\n';
+        }
+        // Just a message
+        Serial.println("MESSAGE");
+        // Empty the array
+        for (uint16_t i = 0; i < *number_of_strings; i++) {
+            strings_array[i].clear();
+        }
+        *number_of_strings = 0;
+        */
+    }
+}
+
+void display_network_con_status(std::string* status_array){
+    /*
+    *   Status array standard:
+    *   [0] - NETWORK_CON_MESSAGE
+    *   [1] - Network type (Eth: or WiFi:)
+    *   [2] - Network name
+    */
+
+    // Example to send to NETWORK_MESSAGE_CH_UUID:
+    // <<C>><<WiFi:>><<Network1>>#
+
+    std::string con_message = status_array[1] + ' ' + status_array[2] + " - Connected";
+    lv_label_set_text(NET_connection_status_label, con_message.c_str());
+    connected_to_network = true;
+}
+
+void disconnect_from_network(){
+    // Example to send to NETWORK_MESSAGE_CH_UUID:
+    // <<D>>#
+    lv_label_set_text(NET_connection_status_label, "Network disconnected");
+    // Display that we are disconnected from networks
+    connected_to_network = false;
+}
+
 // STRING FUNCTIONS //
 
 void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool *completed_message_indicator)
@@ -789,11 +859,6 @@ void connect_to_network(Network* network){
     Serial.println("This will be sent to Raspberry PI:");   // Troubleshooting block
     Serial.println(connect_info_string.c_str());            //
     */
-}
-
-void disconnect_from_network(){
-    //send_simple_command_cb();
-    connected_to_network = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////

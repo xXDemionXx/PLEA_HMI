@@ -12,10 +12,12 @@
 
 
 
-#define SEARCH_NETWORKS_COMMAND     's'     // command for searching networks 's'
-#define REQUEST_IP_COMMAND          'p'     // command for getting IP         'p'
-#define DISCONNECT_NETWORK_COMMAND  'd'     // command for disconnecting      'd'
+#define SEARCH_NETWORKS_COMMAND     's'     // command for searching networks   's'
+#define REQUEST_IP_COMMAND          'p'     // command for getting IP           'p'
+#define DISCONNECT_NETWORK_COMMAND  'd'     // command for disconnecting        'd'
 
 
 
-#define NETWORK_NAMES_TIMEOUT       10000   //in ms
+#define NETWORK_CON_MESSAGE         'C'     // network connected status         'C'
+#define NETWORK_DISCON_MESSAGE      'D'     // network disconnected status      'C'
+#define NETWORK_ERROR_MESSAGE       'E'     // message for errors               'E'
