@@ -648,10 +648,14 @@ void display_network_con_status(std::string* status_array){
 }
 
 void disconnect_from_network(){
-    // Example to send to NETWORK_MESSAGE_CH_UUID:
-    // <<D>>#
+    // Example to send to NETWORK_COMMANDS_CH_UUID:
+    // Sends: 'd'
     lv_label_set_text(NET_connection_status_label, "Network disconnected");
     // Display that we are disconnected from networks
+    Serial.println("Disconnect networks");
+    char c = DISCONNECT_NETWORK_COMMAND;
+    BLE_network_commands_ch->setValue((uint8_t*)&c, 1);
+    BLE_network_commands_ch->notify();
     //connected_to_network = false;
 }
 
@@ -851,18 +855,13 @@ void connect_to_network(Network* network){
     int chunk_num;
     std::string string_chunks_array[20];
     if(connected_to_network == true){
-        disconnect_from_network();
+        disconnect_from_network();      // First disconnect
+        delay(20);
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
-        for(int i=0; i<chunk_num; i++){ //
-            string_chunks_array[i]="";  // Clear the string array after sending
-        }                               //
     }else{
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
-        for(int i=0; i<chunk_num; i++){ //
-            string_chunks_array[i]="";  // Clear the string array after sending
-        }                               //
     }
 }
 
