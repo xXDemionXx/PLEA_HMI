@@ -95,7 +95,7 @@ BLECharacteristic *BLE_IP_ch = NULL;
 BLECharacteristic *BLE_network_commands_ch = NULL;
 BLEAdvertising *BLE_advertising = NULL;
 bool BLEdeviceConnected = false;
-bool BLEolddeviceConnected = false;
+bool BLEolddeviceConnected = true;
 
 const char PLEA_commands[] = {
     /*
@@ -168,7 +168,7 @@ class ServerCallbacks : public BLEServerCallbacks
         // what to do on connection
         BLEdeviceConnected = true;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth connected");
-        Serial.println("Device connected");
+        //Serial.println("Device connected");
     };
 
     void onDisconnect(BLEServer *BLE_HMI_server)
@@ -176,7 +176,7 @@ class ServerCallbacks : public BLEServerCallbacks
         // what to do on disconnection
         BLEdeviceConnected = false;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth disconnected");
-        Serial.println("Device disconnected");
+        //Serial.println("Device disconnected");
         no_connections_available(connection_table_backdrop);
         BLEDevice::startAdvertising(); // wait for another connection
     }
@@ -491,7 +491,7 @@ void init_connection_tab()
     // Add disconnect network button
     lv_obj_t *disconnect_network_btn = lv_btn_create(connection_buttons_backdrop);
     lv_obj_t *disconnect_network_btn_label = lv_label_create(disconnect_network_btn);
-    lv_label_set_text(disconnect_network_btn_label, "Get IP");
+    lv_label_set_text(disconnect_network_btn_label, "Disconnect network");
     lv_obj_add_style(disconnect_network_btn, &connect_btn_style, 0);
     lv_obj_add_style(disconnect_network_btn_label, &connect_btn_style, 0);
     lv_obj_add_event_cb(disconnect_network_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void *)&PLEA_commands[2]); // Send 'd'
@@ -545,9 +545,11 @@ void put_network_names_in_table(const std::vector<Network> &networks)
         lv_table_set_cell_value(connection_table, i, 0, networks[i].type.c_str());
         lv_table_set_cell_value(connection_table, i, 1, networks[i].name.c_str());
         lv_table_set_cell_value(connection_table, i, 2, std::to_string(networks[i].table_entry_nmb).c_str());
-        Serial.print(networks[i].name.c_str()); // troubleshooting line
-        Serial.print(" entry: ");
-        Serial.println(networks[i].table_entry_nmb);
+        /*
+        Serial.print(networks[i].name.c_str());         //
+        Serial.print(" entry: ");                       // Troubleshooting line
+        Serial.println(networks[i].table_entry_nmb);    //
+        */
     }
 }
 
@@ -842,7 +844,7 @@ void connect_to_network(Network* network){
     connect_info_string = connect_info_string + "<<" + network->name + ">>";
     connect_info_string = connect_info_string + "<<" + network->password + ">>" + '#';
 
-    if(connected_to_network = true){
+    if(connected_to_network == true){
         disconnect_from_network();
         BLE_network_commands_ch->setValue(connect_info_string);
         BLE_network_commands_ch->notify();
