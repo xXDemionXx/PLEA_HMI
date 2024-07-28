@@ -335,9 +335,9 @@ void loop()
         if (networks_string_received == true)
         {
             networks.clear();
+            networks.shrink_to_fit();
             BLE_network_names_from_string(network_names_string, networks);
             put_network_names_in_table(networks);
-            
             network_names_string = "";
             network_string_completed = false;
             networks_string_received = false;
@@ -365,7 +365,7 @@ void LVGL_handler_function(void *pvParameters)
     {
         // Timer handler //
         timer_handler_time = lv_timer_handler(); // don't touch this
-        delay(timer_handler_time + 30);          //
+        vTaskDelay(timer_handler_time + 30);          //
         //
     }
 }
@@ -846,8 +846,8 @@ void connect_to_network(Network* network){
 
     if(connected_to_network == true){
         disconnect_from_network();
-        BLE_network_commands_ch->setValue(connect_info_string);
-        BLE_network_commands_ch->notify();
+        BLE_network_connect_ch->setValue(connect_info_string);
+        BLE_network_connect_ch->notify();
 
         connected_network = selected_network;
         connected_to_network = true;
