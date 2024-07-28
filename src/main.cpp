@@ -170,6 +170,7 @@ class ServerCallbacks : public BLEServerCallbacks
         // what to do on connection
         BLEdeviceConnected = true;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth connected");
+        lv_label_set_text(NET_connection_status_label, "Network state unknown");
         //Serial.println("Device connected");
     };
 
@@ -178,6 +179,7 @@ class ServerCallbacks : public BLEServerCallbacks
         // what to do on disconnection
         BLEdeviceConnected = false;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth disconnected");
+        lv_label_set_text(NET_connection_status_label, "Network state unknown");
         //Serial.println("Device disconnected");
         no_connections_available(connection_table_backdrop);
         BLEDevice::startAdvertising(); // wait for another connection
@@ -449,7 +451,7 @@ void init_connection_tab()
     lv_obj_set_align(BLE_connection_status_label, LV_ALIGN_TOP_MID);
 
     NET_connection_status_label = lv_label_create(con_indicator_backdrop);
-    lv_label_set_text(NET_connection_status_label, "Network disconnected");
+    lv_label_set_text(NET_connection_status_label, "Network state unknown");
     lv_obj_set_align(NET_connection_status_label, LV_ALIGN_BOTTOM_MID);
 
     /*
@@ -650,7 +652,7 @@ void disconnect_from_network(){
     // <<D>>#
     lv_label_set_text(NET_connection_status_label, "Network disconnected");
     // Display that we are disconnected from networks
-    connected_to_network = false;
+    //connected_to_network = false;
 }
 
 // STRING FUNCTIONS //
@@ -849,27 +851,18 @@ void connect_to_network(Network* network){
     int chunk_num;
     std::string string_chunks_array[20];
     if(connected_to_network == true){
-        //disconnect_from_network();
+        disconnect_from_network();
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
         for(int i=0; i<chunk_num; i++){ //
             string_chunks_array[i]="";  // Clear the string array after sending
         }                               //
-        BLE_network_commands_ch->setValue(connect_info_string);
-        BLE_network_commands_ch->notify();
-
-        connected_network = selected_network;
-        connected_to_network = true;
     }else{
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
         for(int i=0; i<chunk_num; i++){ //
             string_chunks_array[i]="";  // Clear the string array after sending
         }                               //
-        BLE_network_connect_ch->setValue(connect_info_string);
-        BLE_network_connect_ch->notify();
-        connected_network = selected_network;
-        connected_to_network = true;
     }
 }
 
@@ -932,6 +925,7 @@ void send_simple_command_cb(lv_event_t *e)
 void open_password_popup(lv_event_t *e)
 {
     /*
+    Serial.println("Password popup");                       //
     lv_event_code_t code = lv_event_get_code(e);            //
     if (event_code_to_string(code) != "UNKNOWN_EVENT")      //
     {                                                       //  Troubleshooting block
@@ -939,7 +933,7 @@ void open_password_popup(lv_event_t *e)
         Serial.println(event_code_to_string(code));         //
     }                                                       //
     */
-    Serial.println("POPUP");
+    
     // Get the clicked network
     lv_obj_t *table = lv_event_get_target(e);
     uint16_t row, col;
