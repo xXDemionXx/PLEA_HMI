@@ -34,13 +34,13 @@ bool networks_string_received = false;
 bool network_string_completed = false; // must be 0 at the start
 bool connected_to_network = false;
 
-// IP
-std::string IP_string;
-std::string IP_strings_array[20];   // max size - 10 strings
-uint16_t IP_number_of_strings;
-// IP flags
-bool IP_string_received = false;
-bool IP_string_completed = false; // must be 0 at the start
+// network message
+std::string net_message_string;
+std::string net_message_strings_array[20];   // max size - 20 strings
+uint16_t net_message_num_strings;
+// network message flags
+bool net_message_string_received = false;
+bool net_message_string_completed = false; // must be 0 at the start
 
 // Struct that holds network information
 struct Network
@@ -132,7 +132,7 @@ void LVGL_handler_function(void *pvParameters);
 void put_network_names_in_table(const std::vector<Network> &networkss);
 
 // IP string operation
-void BLE_array_from_string(std::string* IP_string, std::string* IP_strings_array, uint16_t* number_of_strings);
+void BLE_array_from_string(std::string* net_message_string, std::string* net_message_strings_array, uint16_t* number_of_strings);
 int BLE_chunks_array_from_string(std::string* chunks_array, std::string& whole_string, uint16_t chunk_size);    // returns number of entrys in array
 
 // BLE functions
@@ -148,7 +148,7 @@ void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_nu
 // callback functions
 
 void open_password_popup(lv_event_t *e);
-void open_IP_popup(std::string* strings_array, uint16_t* number_of_strings);
+void open_message_popup(std::string* strings_array, uint16_t* number_of_strings);
 static void textarea_event_handler(lv_event_t *e);
 void close_password_popup(lv_event_t *e);
 
@@ -227,11 +227,11 @@ class recieveIPCallback : public BLECharacteristicCallbacks
         Serial.println("*********");                                //
         }
         */
-        BLE_string_from_chunks(BLE_received_string, &IP_string, &IP_string_completed);
-        if (IP_string_completed)
+        BLE_string_from_chunks(BLE_received_string, &net_message_string, &net_message_string_completed);
+        if (net_message_string_completed)
         {
-            IP_string_received = true;
-            IP_string_completed = false;
+            net_message_string_received = true;
+            net_message_string_completed = false;
         }
     }
 };
@@ -346,14 +346,14 @@ void loop()
             network_string_completed = false;
             networks_string_received = false;
         }
-        if (IP_string_received == true)
+        if (net_message_string_received == true)
         {
-            BLE_array_from_string(&IP_string, IP_strings_array, &IP_number_of_strings);
-            //open_IP_popup(IP_strings_array, &IP_number_of_strings);
-            handle_net_message(IP_strings_array, &IP_number_of_strings);
-            IP_string = "";
-            IP_string_completed = false;
-            IP_string_received = false;
+            BLE_array_from_string(&net_message_string, net_message_strings_array, &net_message_num_strings);
+            //open_message_popup(net_message_strings_array, &net_message_num_strings);
+            handle_net_message(net_message_strings_array, &net_message_num_strings);
+            net_message_string = "";
+            net_message_string_completed = false;
+            net_message_string_received = false;
         }
     }
 }
@@ -565,23 +565,24 @@ void no_connections_available(lv_obj_t* backdrop){
     //lv_obj_set_align(placeholder_label, LV_ALIGN_CENTER);
 }
 
-void open_IP_popup(std::string* strings_array, uint16_t* number_of_strings){
+void open_message_popup(std::string* strings_array, uint16_t* number_of_strings){
     /*
     *   Function takes in an array of strings and
     *   puts the elements of the array into a popup
     *   message one under the other.
     */
-    std::string message ="";
-    for(uint16_t i=0; i<(*number_of_strings); i++){
+    std::string message = "";
+    std::string title = strings_array[0];
+    for(uint16_t i=1; i<(*number_of_strings); i++){
         message += strings_array[i] + '\n';
     }
     
     //Serial.println(message.c_str());    // Troubleshooting line
 
-    // IP popup create
-    lv_obj_t* IP_popup = lv_msgbox_create(NULL, "IP info", message.c_str(), NULL, true);
-    lv_obj_set_size(IP_popup, 300, 200);
-    lv_obj_center(IP_popup);
+    // popup create
+    lv_obj_t* popup = lv_msgbox_create(NULL, title.c_str(), message.c_str(), NULL, true);
+    lv_obj_set_size(popup, 300, 200);
+    lv_obj_center(popup);
 
     // Empty the array
     for (uint16_t i = 0; i < *number_of_strings; i++) {
@@ -615,6 +616,7 @@ void handle_net_message(std::string* strings_array, uint16_t* number_of_strings)
         }
     } else {
         Serial.println("MESSAGE");
+        //open_message_popup(&net_message_string, net_message_strings_array, &net_message_num_strings);
         /*
         std::string message ="";
         for(uint16_t i=0; i<(*number_of_strings); i++){
@@ -895,7 +897,6 @@ int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_s
 
     return array_entry;
 }
-
 
 void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_num){
     Serial.println("Sent to PLEA: ");
