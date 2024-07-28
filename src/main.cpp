@@ -133,7 +133,7 @@ void put_network_names_in_table(const std::vector<Network> &networkss);
 
 // IP string operation
 void BLE_array_from_string(std::string* IP_string, std::string* IP_strings_array, uint16_t* number_of_strings);
-int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_string, uint16_t chunk_size);
+int BLE_chunks_array_from_string(std::string* chunks_array, std::string& whole_string, uint16_t chunk_size);    // returns number of entrys in array
 
 // BLE functions
 void init_BLE();
@@ -845,23 +845,32 @@ void connect_to_network(Network* network){
     }
     connect_info_string = connect_info_string + "<<" + network->name + ">>";
     connect_info_string = connect_info_string + "<<" + network->password + ">>" + '#';
-    std::string connect_info_strings_array[4];
 
     int chunk_num;
     std::string string_chunks_array[20];
-
     if(connected_to_network == true){
-        disconnect_from_network();
+        //disconnect_from_network();
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
+        for(int i=0; i<chunk_num; i++){ //
+            string_chunks_array[i]="";  // Clear the string array after sending
+        }                               //
+        BLE_network_commands_ch->setValue(connect_info_string);
+        BLE_network_commands_ch->notify();
+
+        connected_network = selected_network;
+        connected_to_network = true;
     }else{
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
+        for(int i=0; i<chunk_num; i++){ //
+            string_chunks_array[i]="";  // Clear the string array after sending
+        }                               //
+        BLE_network_connect_ch->setValue(connect_info_string);
+        BLE_network_connect_ch->notify();
+        connected_network = selected_network;
+        connected_to_network = true;
     }
-    /*
-    Serial.println("This will be sent to Raspberry PI:");   // Troubleshooting block
-    Serial.println(connect_info_string.c_str());            //
-    */
 }
 
 int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_string, uint16_t chunk_size)
@@ -894,6 +903,7 @@ int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_s
 
     return array_entry;
 }
+
 
 void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_num){
     Serial.println("Sent to PLEA: ");
