@@ -19,5 +19,5 @@
 
 
 #define NETWORK_CON_MESSAGE         'C'     // network connected status         'C'
-#define NETWORK_DISCON_MESSAGE      'D'     // network disconnected status      'C'
+#define NETWORK_DISCON_MESSAGE      'D'     // network disconnected             'D'
 #define NETWORK_ERROR_MESSAGE       'E'     // message for errors               'E'

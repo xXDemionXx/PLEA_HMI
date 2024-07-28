@@ -349,7 +349,6 @@ void loop()
         if (net_message_string_received == true)
         {
             BLE_array_from_string(&net_message_string, net_message_strings_array, &net_message_num_strings);
-            //open_message_popup(net_message_strings_array, &net_message_num_strings);
             handle_net_message(net_message_strings_array, &net_message_num_strings);
             net_message_string = "";
             net_message_string_completed = false;
@@ -565,32 +564,6 @@ void no_connections_available(lv_obj_t* backdrop){
     //lv_obj_set_align(placeholder_label, LV_ALIGN_CENTER);
 }
 
-void open_message_popup(std::string* strings_array, uint16_t* number_of_strings){
-    /*
-    *   Function takes in an array of strings and
-    *   puts the elements of the array into a popup
-    *   message one under the other.
-    */
-    std::string message = "";
-    std::string title = strings_array[0];
-    for(uint16_t i=1; i<(*number_of_strings); i++){
-        message += strings_array[i] + '\n';
-    }
-    
-    //Serial.println(message.c_str());    // Troubleshooting line
-
-    // popup create
-    lv_obj_t* popup = lv_msgbox_create(NULL, title.c_str(), message.c_str(), NULL, true);
-    lv_obj_set_size(popup, 300, 200);
-    lv_obj_center(popup);
-
-    // Empty the array
-    for (uint16_t i = 0; i < *number_of_strings; i++) {
-        strings_array[i].clear();
-    }
-    *number_of_strings = 0;
-}
-
 // NETWORK FUNCTIONS //
 
 void handle_net_message(std::string* strings_array, uint16_t* number_of_strings) {
@@ -611,26 +584,35 @@ void handle_net_message(std::string* strings_array, uint16_t* number_of_strings)
                 break;
             case NETWORK_DISCON_MESSAGE:
                 Serial.println("NET DISCONNECTED");
-                //disconnect_from_network();
+                lv_label_set_text(NET_connection_status_label, "Networks disconnected");
+                connected_to_network = false;
+                break;
+            case NETWORK_ERROR_MESSAGE:
+                Serial.println("NET ERROR");
+                break;
+            default:
+                Serial.println("UNKNOWN MESSAGE");
                 break;
         }
-    } else {
-        Serial.println("MESSAGE");
-        //open_message_popup(&net_message_string, net_message_strings_array, &net_message_num_strings);
-        /*
-        std::string message ="";
-        for(uint16_t i=0; i<(*number_of_strings); i++){
+    } else {    // Create message popup
+        Serial.println("MESSAGE POPUP");
+        std::string message = "";
+        std::string title = strings_array[0];
+
+        for(uint16_t i=1; i<(*number_of_strings); i++){
             message += strings_array[i] + '\n';
         }
-        // Just a message
-        Serial.println("MESSAGE");
-        // Empty the array
-        for (uint16_t i = 0; i < *number_of_strings; i++) {
-            strings_array[i].clear();
-        }
-        *number_of_strings = 0;
-        */
+
+        // popup create
+        lv_obj_t* popup = lv_msgbox_create(NULL, title.c_str(), message.c_str(), NULL, true);
+        lv_obj_set_size(popup, 300, 200);
+        lv_obj_center(popup);
     }
+    // Empty the array
+    for (uint16_t i = 0; i < *number_of_strings; i++) {
+        strings_array[i].clear();
+    }
+    *number_of_strings = 0;
 }
 
 void display_network_con_status(std::string* status_array){
@@ -744,6 +726,9 @@ void BLE_array_from_string(std::string* whole_string, std::string* strings_array
      *   end with >>. '#' marks the end of the whole string. Puts
      *   all the chunks into a string array.
      */
+
+    // **BUG** --> If a string inbetween any <<string>> is to long (>50 char) it crashes
+
     *number_of_strings = 0;
 
     std::regex re(R"(<<([^>]+)>>)"); // Regular expression to extract IPs
