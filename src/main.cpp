@@ -91,7 +91,7 @@ BLEServer *BLE_HMI_server = NULL;
 BLEService *BLE_network_service = NULL;
 BLECharacteristic *BLE_network_names_ch = NULL;
 BLECharacteristic *BLE_network_connect_ch = NULL;
-BLECharacteristic *BLE_IP_ch = NULL;
+BLECharacteristic *BLE_message_ch = NULL;
 BLECharacteristic *BLE_network_commands_ch = NULL;
 BLEAdvertising *BLE_advertising = NULL;
 bool BLEdeviceConnected = false;
@@ -212,7 +212,7 @@ class recieveNetworkNamesCallback : public BLECharacteristicCallbacks
 };
 
 // class that deals with receiving string chunks from client
-class recieveIPCallback : public BLECharacteristicCallbacks
+class recieveMessageCallback : public BLECharacteristicCallbacks
 {
     void onWrite(BLECharacteristic *receiver_characteristic)
     {
@@ -619,14 +619,13 @@ void display_network_con_status(std::string* status_array){
     /*
     *   Status array standard:
     *   [0] - NETWORK_CON_MESSAGE
-    *   [1] - Network type (Eth: or WiFi:)
-    *   [2] - Network name
+    *   [1] - Network status message
     */
 
     // Example to send to NETWORK_MESSAGE_CH_UUID:
-    // <<C>><<WiFi:>><<Network1>>#
+    // <<C>><<E: Network1, W: Network2>>#
 
-    std::string con_message = status_array[1] + ' ' + status_array[2] + " - Connected";
+    std::string con_message = status_array[1];
     lv_label_set_text(NET_connection_status_label, con_message.c_str());
     connected_to_network = true;
 }
@@ -805,13 +804,12 @@ void init_BLE_network_service()
         BLECharacteristic::PROPERTY_NOTIFY);
     BLE_network_connect_ch->addDescriptor(new BLE2902()); // Add a BLE descriptor for notifications
 
-    // Create BLE_IP_ch characteristic
+    // Create BLE_message_ch characteristic
     // It is intended for receiveing IPs from Raspberry PI
-    BLE_IP_ch = BLE_network_service->createCharacteristic(
+    BLE_message_ch = BLE_network_service->createCharacteristic(
         NETWORK_MESSAGE_CH_UUID,
-        BLECharacteristic::PROPERTY_READ |
         BLECharacteristic::PROPERTY_WRITE);
-    BLE_IP_ch->setCallbacks(new recieveIPCallback()); // Add callback on recieve from client
+    BLE_message_ch->setCallbacks(new recieveMessageCallback()); // Add callback on recieve from client
 
 
     // Create BLE_network_commands_ch characteristic
@@ -833,11 +831,12 @@ void connect_to_network(Network* network){
     std::string connect_info_string = "";
     if(network->type == "WiFi"){
         connect_info_string = "<<W:>>";
-    }else if(network->type == "Eth"){
+        connect_info_string = connect_info_string + "<<" + network->name + ">>";
+        connect_info_string = connect_info_string + "<<" + network->password + ">>" + '#';
+    }else if(network->type == "Eth"){   // If it's an ethernet network we don't need a password
         connect_info_string = "<<E:>>";
+        connect_info_string = connect_info_string + "<<" + network->name + ">>" + '#';
     }
-    connect_info_string = connect_info_string + "<<" + network->name + ">>";
-    connect_info_string = connect_info_string + "<<" + network->password + ">>" + '#';
 
     int chunk_num;
     std::string string_chunks_array[20];
@@ -889,7 +888,7 @@ void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_nu
         BLE_network_connect_ch->setValue(send_chunks_array[i].c_str());
         BLE_network_connect_ch->notify();
         Serial.println(send_chunks_array[i].c_str());
-        delay(3);
+        delay(300);
     }
 }
 
@@ -1010,7 +1009,7 @@ void close_password_popup(lv_event_t *e)
 static void password_popup_connect_btn_cb(lv_event_t *e)
 {
     /*
-    Serial.println("CONNECT_BUTTON_PRESSED");
+    Serial.println("CONNECT_BUTTON_PRESSED");                   //
     Serial.println("Connect to network: ");                     //
     Serial.println(network_to_connect_to->name.c_str());        // Troubleshooting block
     Serial.println(network_to_connect_to->password.c_str());    //
