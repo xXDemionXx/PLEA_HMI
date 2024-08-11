@@ -81,6 +81,8 @@ lv_obj_t *password_popup;
 
 // styles
 
+static lv_style_t password_popup_style;
+
 ////////////////////////////////////////////////////////////////////////////////////////////
 
 // BLE //
@@ -841,7 +843,6 @@ void connect_to_network(Network* network){
     int chunk_num;
     std::string string_chunks_array[20];
     if(connected_to_network == true){
-        disconnect_from_network();      // First disconnect
         delay(20);
         chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
         BLE_send_connect_network_info(string_chunks_array, chunk_num);
@@ -908,58 +909,44 @@ void send_simple_command_cb(lv_event_t *e)
 
 void open_password_popup(lv_event_t *e)
 {
-    /*
-    Serial.println("Password popup");                       //
-    lv_event_code_t code = lv_event_get_code(e);            //
-    if (event_code_to_string(code) != "UNKNOWN_EVENT")      //
-    {                                                       //  Troubleshooting block
-        Serial.print("Event code: ");                       //
-        Serial.println(event_code_to_string(code));         //
-    }                                                       //
-    */
-    
     // Get the clicked network
     lv_obj_t *table = lv_event_get_target(e);
     uint16_t row, col;
     lv_table_get_selected_cell(table, &row, &col);
     const char* network_name = lv_table_get_cell_value(table, row, 1);
+    const char* network_type = lv_table_get_cell_value(table, row, 0);
     const char* msg_prt1 = "Connect to: ";
     char pupup_message[50];
     snprintf(pupup_message, sizeof(pupup_message), "%s%s", msg_prt1, network_name);
 
-    selected_network.name = network_name;       // Assign the selected network
-    selected_network.type = lv_table_get_cell_value(table, row, 0);
+    selected_network.name = network_name;
+    selected_network.type = network_type;
 
-    // Create pasword popup
+    // Create password popup
     lv_obj_t *password_popup = lv_msgbox_create(NULL, "Enter password", pupup_message, NULL, false);
     lv_obj_set_size(password_popup, 300, 200);
     lv_obj_center(password_popup);
 
-    // Create a text area for password input
-    lv_obj_t *password_textarea = lv_textarea_create(password_popup);
-    lv_textarea_set_password_mode(password_textarea, true);
-    lv_textarea_set_one_line(password_textarea, true);
-    lv_textarea_set_placeholder_text(password_textarea, "Enter password");
-    lv_obj_set_width(password_textarea, LV_PCT(80));
-    lv_obj_center(password_textarea);
-    lv_obj_add_event_cb(password_textarea, password_textarea_cb, LV_EVENT_FOCUSED, NULL);
+    // Create and apply password popup style
+    lv_style_init(&password_popup_style);
+    lv_obj_add_style(password_popup, &password_popup_style, LV_PART_MAIN);
 
-    /*
-    // Style for password text area
-    static lv_style_t password_textarea_style;
-    lv_style_init(&password_textarea_style);
-    lv_style_set_text_color(&password_textarea_style, lv_color_black());
-    lv_style_set_border_color(&password_textarea_style, lv_color_black());
-    lv_style_set_border_width(&password_textarea_style, 1);
-    lv_style_set_opa(&password_textarea_style, LV_OPA_TRANSP);
-    lv_obj_add_style(password_textarea, &password_textarea_style, LV_PART_CURSOR | LV_STATE_DEFAULT);
-    */
+    if(strcmp(network_type, "WiFi") == 0){
+        // Create a text area for password input for WiFi
+        lv_obj_t *password_textarea = lv_textarea_create(password_popup);
+        lv_textarea_set_password_mode(password_textarea, true);
+        lv_textarea_set_one_line(password_textarea, true);
+        lv_textarea_set_placeholder_text(password_textarea, "Enter password");
+        lv_obj_set_width(password_textarea, LV_PCT(80));
+        lv_obj_center(password_textarea);
+        lv_obj_add_event_cb(password_textarea, password_textarea_cb, LV_EVENT_FOCUSED, password_popup);
+    }
 
     // Create connect button
     lv_obj_t *connect_btn = lv_btn_create(password_popup);
     lv_obj_t *connect_btn_label = lv_label_create(connect_btn);
     lv_obj_set_size(connect_btn, 80, 30);
-    lv_obj_set_align(connect_btn, LV_ALIGN_BOTTOM_LEFT);
+    lv_obj_align(connect_btn, LV_ALIGN_BOTTOM_LEFT, -30, -10);
     lv_label_set_text(connect_btn_label, "Connect");
     lv_obj_add_event_cb(connect_btn, password_popup_connect_btn_cb, LV_EVENT_CLICKED, &selected_network);
     lv_obj_center(connect_btn_label);
@@ -968,21 +955,27 @@ void open_password_popup(lv_event_t *e)
     lv_obj_t *cancel_btn = lv_btn_create(password_popup);
     lv_obj_t *cancel_btn_label = lv_label_create(cancel_btn);
     lv_obj_set_size(cancel_btn, 80, 30);
-    lv_obj_set_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, 30, -10);
     lv_label_set_text(cancel_btn_label, "Cancel");
-    lv_obj_add_event_cb(cancel_btn, close_password_popup, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(cancel_btn, close_password_popup, LV_EVENT_CLICKED, password_popup);
     lv_obj_center(cancel_btn_label);
 }
 
 static void password_textarea_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
-    lv_obj_t *password_textarea = lv_event_get_target(e);
+    lv_obj_t* password_textarea = lv_event_get_target(e);
+    lv_obj_t* password_popup = (lv_obj_t*)lv_event_get_user_data(e);  // Get the parent popup from event data
+    
     if (code == LV_EVENT_FOCUSED)
     {
-        lv_obj_t *keyboard = lv_keyboard_create(lv_layer_top());                              // Create keyboard
-        lv_keyboard_set_textarea(keyboard, password_textarea);                                // Link the keyboard to the text area
-        lv_obj_add_event_cb(keyboard, keyboard_delete_cb, LV_EVENT_READY, password_textarea); // Register event callback for the keyboard
+        lv_style_set_translate_y(&password_popup_style, -25);
+        lv_obj_refresh_style(password_popup, LV_PART_MAIN, LV_STYLE_PROP_ANY);
+
+        // Create the keyboard dynamically
+        lv_obj_t *keyboard = lv_keyboard_create(lv_layer_top());
+        lv_keyboard_set_textarea(keyboard, password_textarea);
+        lv_obj_add_event_cb(keyboard, keyboard_delete_cb, LV_EVENT_READY, password_textarea);
     }
 }
 
@@ -990,11 +983,18 @@ static void keyboard_delete_cb(lv_event_t *e)
 {
     lv_obj_t *keyboard = lv_event_get_target(e);
     lv_obj_t *text_area = (lv_obj_t *)lv_event_get_user_data(e);
-    lv_obj_del(lv_event_get_target(e));     // Deletes the keyboard when OK is pressed
-    // lv_event_send(text_area, LV_EVENT_DEFOCUSED, NULL);
-    lv_obj_clear_state(text_area, LV_STATE_FOCUSED);        // Ensure text area is not focused
+
+    // Clear focus and reset style translation before deleting the keyboard
+    lv_obj_clear_state(text_area, LV_STATE_FOCUSED);
     selected_network.password = lv_textarea_get_text(text_area);
+
+    // Reset the popup style before deleting the keyboard
+    lv_style_set_translate_y(&password_popup_style, 0);
+    lv_obj_refresh_style(lv_obj_get_parent(text_area), LV_PART_MAIN, LV_STYLE_PROP_ANY);
+
+    lv_obj_del(keyboard);  // Delete the keyboard
 }
+
 
 void close_password_popup(lv_event_t *e)
 {
