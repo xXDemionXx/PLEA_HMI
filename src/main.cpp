@@ -3,17 +3,13 @@
 // libraries
 #include <lvgl.h>
 #include <gfx_conf.h>
-#include <unordered_map>
-#include <vector>
-#include <sstream>
-#include <string>
 #include <regex>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
-// custom
+// custom headers
 #include <hardware.h>
 #include <UI_parameters.h>
 #include <BLE_conf.h>
@@ -52,10 +48,6 @@ struct Network
 };
 std::vector<Network> networks;  // vector that holds network names
 
-std::string test_network_names = "W:<<Joe_Biden>>E:<<Donald_Trump>>W:<<Barack OBAMA>>W:<<Hillary Clinton>>E:<<gogo>>W:<<Zelinski>>E:<<Sheisty>>E:<<KOKO>>W:<<AMERICA>>E:<<LOLO>>W:<<League>>E:<<Off>>W:<<Legends>>#";
-std::string test_IPs = "<<Joe>><<Shmoe>><<Boe>><<Koe>><<Doe>>";
-
-
 Network selected_network;       // holds the network that we have selected in the table
 Network connected_network;      // holds the network that we will be connected to
 
@@ -93,7 +85,7 @@ BLEServer *BLE_HMI_server = NULL;
 BLEService *BLE_network_service = NULL;
 BLECharacteristic *BLE_network_names_ch = NULL;
 BLECharacteristic *BLE_network_connect_ch = NULL;
-BLECharacteristic *BLE_message_ch = NULL;
+BLECharacteristic *BLE_network_message_ch = NULL;
 BLECharacteristic *BLE_network_commands_ch = NULL;
 BLEAdvertising *BLE_advertising = NULL;
 bool BLEdeviceConnected = false;
@@ -115,7 +107,7 @@ const char PLEA_commands[] = {
 
 // gfx functions
 void touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data);
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
+void disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);
 
 // UI init functions
 void init_tabs();
@@ -123,7 +115,6 @@ void init_connection_tab();
 void init_macros_tab();
 void init_settings_tab();
 void init_PLEA_settings_tab();
-
 // UI functions
 void no_connections_available(lv_obj_t* backdrop);
 
@@ -144,13 +135,12 @@ void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool
 void BLE_network_names_from_string(std::string networks_string, std::vector<Network> &networks);
 void send_simple_command_cb(lv_event_t *e);
 void connect_to_network(Network* network);
-void disconnect_from_network();
+//void disconnect_from_network();   //DEPRICATED
 void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_num);
 
 // callback functions
 
 void open_password_popup(lv_event_t *e);
-void open_message_popup(std::string* strings_array, uint16_t* number_of_strings);
 static void textarea_event_handler(lv_event_t *e);
 void close_password_popup(lv_event_t *e);
 
@@ -167,8 +157,7 @@ void display_network_con_status(std::string* status_array);
 // connect/disconnect callback class
 class ServerCallbacks : public BLEServerCallbacks
 {
-    void onConnect(BLEServer *BLE_HMI_server)
-    {
+    void onConnect(BLEServer *BLE_HMI_server){
         // what to do on connection
         BLEdeviceConnected = true;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth connected");
@@ -176,8 +165,7 @@ class ServerCallbacks : public BLEServerCallbacks
         //Serial.println("Device connected");
     };
 
-    void onDisconnect(BLEServer *BLE_HMI_server)
-    {
+    void onDisconnect(BLEServer *BLE_HMI_server){
         // what to do on disconnection
         BLEdeviceConnected = false;
         lv_label_set_text(BLE_connection_status_label, "Bluetooth disconnected");
@@ -258,7 +246,7 @@ void init_LVGL()
     lv_disp_drv_init(&disp_drv); // display driver
     disp_drv.hor_res = screenWidth;
     disp_drv.ver_res = screenHeight;
-    disp_drv.flush_cb = my_disp_flush; // flush function for LVGL
+    disp_drv.flush_cb = disp_flush; // flush function for LVGL
     disp_drv.full_refresh = 1;
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
@@ -287,8 +275,7 @@ void init_LVGL()
     //
 }
 
-void touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
-{
+void touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data){
     // This function gives LVGL the touch cordinates
     uint16_t touchX, touchY;
     bool touched = gfx.getTouch(&touchX, &touchY);
@@ -305,8 +292,7 @@ void touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
     }
 }
 
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
-{
+void disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p){
     // This function is used by LVGL to push graphics to the screen
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
@@ -316,8 +302,7 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
-void setup()
-{
+void setup(){
     // Create a task to handle the LVGL updates
     xTaskCreatePinnedToCore(
         LVGL_handler_function, /* Task function. */
@@ -334,12 +319,9 @@ void setup()
     //
 }
 
-void loop()
-{
-    if (BLEdeviceConnected == true)
-    {
-        if (networks_string_received == true)
-        {
+void loop(){
+    if (BLEdeviceConnected == true){
+        if (networks_string_received == true){
             networks.clear();
             networks.shrink_to_fit();
             BLE_network_names_from_string(network_names_string, networks);
@@ -348,8 +330,7 @@ void loop()
             network_string_completed = false;
             networks_string_received = false;
         }
-        if (net_message_string_received == true)
-        {
+        if (net_message_string_received == true){
             BLE_array_from_string(&net_message_string, net_message_strings_array, &net_message_num_strings);
             handle_net_message(net_message_strings_array, &net_message_num_strings);
             net_message_string = "";
@@ -359,18 +340,16 @@ void loop()
     }
 }
 
-void LVGL_handler_function(void *pvParameters)
-{
+void LVGL_handler_function(void *pvParameters){
     /*
      *   This task handles the LVGL timer as to
      *   free up the main loop
      */
     uint32_t timer_handler_time;
-    while (true)
-    {
+    while (true){
         // Timer handler //
-        timer_handler_time = lv_timer_handler(); // don't touch this
-        vTaskDelay(timer_handler_time + 30);          //
+        timer_handler_time = lv_timer_handler();    // don't touch this
+        vTaskDelay(timer_handler_time + 30);        //
         //
     }
 }
@@ -379,8 +358,7 @@ void LVGL_handler_function(void *pvParameters)
 
 // UI INIT FUNCTIONS //
 
-void init_tabs()
-{
+void init_tabs(){
     main_tabview = lv_tabview_create(default_screen, LV_DIR_TOP, MAIN_TABVIEW_HEIGHT); // create main tabview
     init_connection_tab();
     //init_macros_tab();
@@ -388,12 +366,11 @@ void init_tabs()
     //init_settings_tab();
 }
 
-void init_connection_tab()
-{
+void init_connection_tab(){
     /*
      *   This tab deals with connecting wifi/ethernet to PLEA
      */
-    connection_tab = lv_tabview_add_tab(main_tabview, "Connection"); // create main tabview
+    connection_tab = lv_tabview_add_tab(main_tabview, "Connection"); // create connection_tab
     lv_obj_set_flex_flow(connection_tab, LV_FLEX_FLOW_ROW);
 
     connection_table_backdrop = lv_obj_create(connection_tab);
@@ -418,17 +395,6 @@ void init_connection_tab()
 
     // Connection table
     no_connections_available(connection_table_backdrop);
-    /*
-    connection_table = lv_table_create(connection_table_backdrop);
-    lv_obj_set_size(connection_table, LV_PCT(100), LV_PCT(100));
-    lv_obj_add_event_cb(connection_table, open_password_popup, LV_EVENT_VALUE_CHANGED, NULL);
-    // lv_table_set_col_cnt(connection_table, 3);
-    // lv_table_set_col_width(connection_table, 0, 80);
-    // lv_table_set_col_width(connection_table, 2, 80);
-    // lv_table_set_col_width(connection_table, 1, 220);
-    lv_obj_set_flex_flow(connection_table, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_grow(connection_table, 1);
-    */
 
     lv_obj_set_flex_flow(connection_buttons_backdrop, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(connection_buttons_backdrop, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START); // how to align backdrop
@@ -455,34 +421,14 @@ void init_connection_tab()
     lv_label_set_text(NET_connection_status_label, "Network state unknown");
     lv_obj_set_align(NET_connection_status_label, LV_ALIGN_BOTTOM_MID);
 
-    /*
-    // Add connect/disconnect button - it can connect or disconnect
-    lv_obj_t *connect_btn = lv_btn_create(connection_buttons_backdrop);
-    lv_obj_t *connect_btn_label = lv_label_create(connect_btn);
-    lv_label_set_text(connect_btn_label, "Connect");
-    lv_obj_add_style(connect_btn, &connect_btn_style, 0);
-    lv_obj_add_style(connect_btn_label, &connect_btn_style, 0);
-    //lv_obj_add_event_cb(connect_btn, open_password_popup, LV_EVENT_CLICKED, NULL); // Add event callback on button press
-    lv_obj_center(connect_btn_label);
-    */
-
     // Add search connections button
     lv_obj_t *srch_networks_btn = lv_btn_create(connection_buttons_backdrop);
     lv_obj_t *srch_networks_btn_label = lv_label_create(srch_networks_btn);
-    lv_label_set_text(srch_networks_btn_label, "Search connections");
+    lv_label_set_text(srch_networks_btn_label, "Search for networks");
     lv_obj_add_style(srch_networks_btn, &connect_btn_style, 0);
     lv_obj_add_style(srch_networks_btn_label, &connect_btn_style, 0);
     lv_obj_add_event_cb(srch_networks_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void *)&PLEA_commands[0]); // Send 's'
     lv_obj_center(srch_networks_btn_label);
-
-    /*
-    // Add empty memory button
-    lv_obj_t *empty_btn = lv_btn_create(connection_buttons_backdrop);
-    lv_obj_t *empty_btn_label = lv_label_create(empty_btn);
-    lv_label_set_text(empty_btn_label, "Empty");
-    lv_obj_add_style(empty_btn, &connect_btn_style, 0);
-    lv_obj_add_style(empty_btn_label, &connect_btn_style, 0);
-    */
 
     // Add IP button
     lv_obj_t *IP_btn = lv_btn_create(connection_buttons_backdrop);
@@ -496,7 +442,7 @@ void init_connection_tab()
     // Add disconnect network button
     lv_obj_t *disconnect_network_btn = lv_btn_create(connection_buttons_backdrop);
     lv_obj_t *disconnect_network_btn_label = lv_label_create(disconnect_network_btn);
-    lv_label_set_text(disconnect_network_btn_label, "Disconnect network");
+    lv_label_set_text(disconnect_network_btn_label, "Disconnect networks");
     lv_obj_add_style(disconnect_network_btn, &connect_btn_style, 0);
     lv_obj_add_style(disconnect_network_btn_label, &connect_btn_style, 0);
     lv_obj_add_event_cb(disconnect_network_btn, send_simple_command_cb, LV_EVENT_CLICKED, (void *)&PLEA_commands[2]); // Send 'd'
@@ -530,8 +476,7 @@ void init_PLEA_settings_tab()
 
 // UI FUNCTIONS //
 
-void put_network_names_in_table(const std::vector<Network> &networks)
-{
+void put_network_names_in_table(const std::vector<Network> &networks){
     byte number_of_networks = networks.size();
 
     lv_obj_clean(connection_table_backdrop);
@@ -552,7 +497,7 @@ void put_network_names_in_table(const std::vector<Network> &networks)
         lv_table_set_cell_value(connection_table, i, 2, std::to_string(networks[i].table_entry_nmb).c_str());
         /*
         Serial.print(networks[i].name.c_str());         //
-        Serial.print(" entry: ");                       // Troubleshooting line
+        Serial.print(" entry: ");                       // Troubleshooting block
         Serial.println(networks[i].table_entry_nmb);    //
         */
     }
@@ -570,12 +515,11 @@ void no_connections_available(lv_obj_t* backdrop){
 
 void handle_net_message(std::string* strings_array, uint16_t* number_of_strings) {
     /*
-    *   Function takes in an array of strings and
-    *   puts the elements of the array into a popup
-    *   message one under the other.
+    *   Function takes in an array of strings:
+    *       if (the first string in the array is a single char) -> it is a special command
+    *       elese -> puts the elements of the array into a popup
     */
-
-    if (strings_array[0].length() == 1) {         // If the first string from the array is a single char then it is a command
+    if (strings_array[0].length() == 1) {   // If the first string from the array is a single char then it is a command
         char command = strings_array[0][0]; // Gives the char in the first string from the array
         Serial.print("Command: ");
         Serial.println(command);
@@ -606,6 +550,8 @@ void handle_net_message(std::string* strings_array, uint16_t* number_of_strings)
         }
 
         // popup create
+        // array[0] = title
+        // array[1...n] = messages (each message goes in a seperate row)
         lv_obj_t* popup = lv_msgbox_create(NULL, title.c_str(), message.c_str(), NULL, true);
         lv_obj_set_size(popup, 300, 200);
         lv_obj_center(popup);
@@ -623,7 +569,6 @@ void display_network_con_status(std::string* status_array){
     *   [0] - NETWORK_CON_MESSAGE
     *   [1] - Network status message
     */
-
     // Example to send to NETWORK_MESSAGE_CH_UUID:
     // <<C>><<E: Network1, W: Network2>>#
 
@@ -632,6 +577,7 @@ void display_network_con_status(std::string* status_array){
     connected_to_network = true;
 }
 
+/*  //DEPRICATED
 void disconnect_from_network(){
     // Example to send to NETWORK_COMMANDS_CH_UUID:
     // Sends: 'd'
@@ -643,11 +589,11 @@ void disconnect_from_network(){
     BLE_network_commands_ch->notify();
     //connected_to_network = false;
 }
+*/
 
 // STRING FUNCTIONS //
 
-void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool *completed_message_indicator)
-{
+void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool *completed_message_indicator){
     /*
      *   Takes the incoming chunks of the string coming in
      *   and appends them to a string. Detects the end of a
@@ -670,8 +616,7 @@ void BLE_string_from_chunks(std::string chunk, std::string *storage_string, bool
     }
 }
 
-void BLE_network_names_from_string(std::string networks_string, std::vector<Network> &networks)
-{
+void BLE_network_names_from_string(std::string networks_string, std::vector<Network> &networks){
     /*
      *   Chops the networks_string into individual networks.
      *
@@ -685,10 +630,9 @@ void BLE_network_names_from_string(std::string networks_string, std::vector<Netw
      *   <<  Start of a network's name
      *   >>  End of a network's name
      *
-     *   Example (WiFi network with a name net123):
-     *   W:<<net123>>
+     *   Example (one WiFi network with a name net123):
+     *   W:<<net123>>#
      */
-
     networks.clear(); // Empty the vector before writing new networks
 
     std::regex re(R"((W:|E:)<<([^>]+)>>)"); // Regular expression to extract network names and types
@@ -736,7 +680,7 @@ void BLE_array_from_string(std::string* whole_string, std::string* strings_array
     std::smatch match;
     std::string::const_iterator searchStart((*whole_string).cbegin());
 
-    // Extract IPs
+    // Extract individual data contain in <<data>> instances
     uint16_t i = 0;
     while (std::regex_search(searchStart, (*whole_string).cend(), match, re))
     {
@@ -753,15 +697,13 @@ void BLE_array_from_string(std::string* whole_string, std::string* strings_array
     }                                               //
     Serial.println("*********");                    //
     */
-   
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
 // BLE FUNCTIONS //
 
-void init_BLE()
-{
+void init_BLE(){
 
     // Create the BLE Device
     BLEDevice::init("PLEA HMI");
@@ -783,8 +725,7 @@ void init_BLE()
     //
 }
 
-void init_BLE_network_service()
-{
+void init_BLE_network_service(){
     /*
      *   This function creates the BLE_network_service
      *   and it starts it.
@@ -806,12 +747,12 @@ void init_BLE_network_service()
         BLECharacteristic::PROPERTY_NOTIFY);
     BLE_network_connect_ch->addDescriptor(new BLE2902()); // Add a BLE descriptor for notifications
 
-    // Create BLE_message_ch characteristic
+    // Create BLE_network_message_ch characteristic
     // It is intended for receiveing IPs from Raspberry PI
-    BLE_message_ch = BLE_network_service->createCharacteristic(
+    BLE_network_message_ch = BLE_network_service->createCharacteristic(
         NETWORK_MESSAGE_CH_UUID,
         BLECharacteristic::PROPERTY_WRITE);
-    BLE_message_ch->setCallbacks(new recieveMessageCallback()); // Add callback on recieve from client
+    BLE_network_message_ch->setCallbacks(new recieveMessageCallback()); // Add callback on recieve from client
 
 
     // Create BLE_network_commands_ch characteristic
@@ -824,7 +765,6 @@ void init_BLE_network_service()
 
 
     BLE_advertising->addServiceUUID(NETWORK_SERVICE_UUID); // Add BLE_network_service to advertising
-
     BLE_network_service->start(); // Start the service
 }
 
@@ -842,18 +782,12 @@ void connect_to_network(Network* network){
 
     int chunk_num;
     std::string string_chunks_array[20];
-    if(connected_to_network == true){
-        delay(20);
-        chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
-        BLE_send_connect_network_info(string_chunks_array, chunk_num);
-    }else{
-        chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
-        BLE_send_connect_network_info(string_chunks_array, chunk_num);
-    }
+    delay(20);
+    chunk_num = BLE_chunks_array_from_string(string_chunks_array, connect_info_string, BLE_CHUNK_SIZE);
+    BLE_send_connect_network_info(string_chunks_array, chunk_num);
 }
 
-int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_string, uint16_t chunk_size)
-{
+int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_string, uint16_t chunk_size){
     /*
     *   Function takes in:
     *   chunk_array[]       -where it will write chunks to
@@ -878,6 +812,8 @@ int BLE_chunks_array_from_string(std::string *chunks_array, std::string& whole_s
     if(num_incomplete_chunk != 0){
         chunks_array[array_entry] = whole_string.substr(string_length - num_incomplete_chunk, num_incomplete_chunk);
         Serial.println(chunks_array[array_entry].c_str());
+    }else{
+        array_entry--;
     }
 
     return array_entry;
@@ -888,7 +824,7 @@ void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_nu
     for(int i=0; i<chunk_num; i++){
         BLE_network_connect_ch->setValue(send_chunks_array[i].c_str());
         BLE_network_connect_ch->notify();
-        Serial.println(send_chunks_array[i].c_str());
+        //Serial.println(send_chunks_array[i].c_str());   // Troubleshooting line
         delay(300);
     }
 }
@@ -897,8 +833,7 @@ void BLE_send_connect_network_info(std::string* send_chunks_array, int& chunk_nu
 
 // CALLBACK FUNCTIONS //
 
-void send_simple_command_cb(lv_event_t *e)
-{
+void send_simple_command_cb(lv_event_t *e){
     char command = *(char *)lv_event_get_user_data(e); // Get the command from user_data
     std::string command_str(1, command);               //
     BLE_network_commands_ch->setValue(command_str);    //
@@ -907,8 +842,7 @@ void send_simple_command_cb(lv_event_t *e)
 
 // EVENT CALLBACKS //
 
-void open_password_popup(lv_event_t *e)
-{
+void open_password_popup(lv_event_t *e){
     // Get the clicked network
     lv_obj_t *table = lv_event_get_target(e);
     uint16_t row, col;
@@ -961,8 +895,7 @@ void open_password_popup(lv_event_t *e)
     lv_obj_center(cancel_btn_label);
 }
 
-static void password_textarea_cb(lv_event_t *e)
-{
+static void password_textarea_cb(lv_event_t *e){
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t* password_textarea = lv_event_get_target(e);
     lv_obj_t* password_popup = (lv_obj_t*)lv_event_get_user_data(e);  // Get the parent popup from event data
@@ -979,8 +912,7 @@ static void password_textarea_cb(lv_event_t *e)
     }
 }
 
-static void keyboard_delete_cb(lv_event_t *e)
-{
+static void keyboard_delete_cb(lv_event_t *e){
     lv_obj_t *keyboard = lv_event_get_target(e);
     lv_obj_t *text_area = (lv_obj_t *)lv_event_get_user_data(e);
 
@@ -995,9 +927,7 @@ static void keyboard_delete_cb(lv_event_t *e)
     lv_obj_del(keyboard);  // Delete the keyboard
 }
 
-
-void close_password_popup(lv_event_t *e)
-{
+void close_password_popup(lv_event_t *e){
     lv_obj_t *cancel_btn = lv_event_get_target(e);
     lv_msgbox_close(lv_obj_get_parent(cancel_btn));
     //
@@ -1006,8 +936,7 @@ void close_password_popup(lv_event_t *e)
     selected_network.type = "";     //
 }
 
-static void password_popup_connect_btn_cb(lv_event_t *e)
-{
+static void password_popup_connect_btn_cb(lv_event_t *e){
     /*
     Serial.println("CONNECT_BUTTON_PRESSED");                   //
     Serial.println("Connect to network: ");                     //
@@ -1015,7 +944,6 @@ static void password_popup_connect_btn_cb(lv_event_t *e)
     Serial.println(network_to_connect_to->password.c_str());    //
     Serial.println(network_to_connect_to->type.c_str());        //
     */
-
     connect_to_network((Network*) lv_event_get_user_data(e));
 
     selected_network.name = "";     //
